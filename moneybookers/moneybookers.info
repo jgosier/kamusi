@@ -1,6 +1,0 @@
-; $Id:
-name = Moneybookers 
-core = 6.x
-description = Enables payment to be made via the moneybookers.com payment gateway service.
-project = "moneybookers"
-
