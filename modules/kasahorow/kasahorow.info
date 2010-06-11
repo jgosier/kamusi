@@ -1,0 +1,10 @@
+;$id $
+name = kasahorow Base
+description = Common functions required by all kasahorow modules
+package = "kasahorow Tools"
+version = Stable
+core = 6.x
+dependencies[] = 'node'
+dependencies[] = 'statistics'
+#Nice to have if you want to use the kw/home as your homepage
+#jquery_update, jquery_ui

@@ -1,0 +1,824 @@
+<?php
+/**
+ *Specify different modes of usage
+ *e.g.
+ *monolingual dictionary search (look for everything about entry x)
+ *bilingual dictionary/word translator search (look for what entry x means (is linked to) in database Z)
+ *web-page translator (using Chris's demo) (multi-entry search + parsing)
+ *themeable playlist (e.g. for museke, this will be a music playlist, for PALDO this will be a
+ *personal wordlist, for fie.nipa this will be a product wishlist, etc)
+ *The idea is that this client will be our own native client into which we'll pour our love
+ *and affection:)
+ *All other clients such as for Facebook, OpenSocial, etc should offer at least a subset
+ *of the features of this client
+ *
+ *TODO: Split out search lookup part into a separate module. Use Hunspell affix
+ *files to decompose compound words and translate separately
+ *
+ *TODO: Cache search results using $searchterm:$from:$to as cid. Only cache those
+ *results which don't exceed the deadline. Idea is to reduce multiple database
+ *reads during a search to a single lookup table read. How to make data fresh?
+ *Maybe create the cache when the search is done by a user with edit permission
+ *since they may change the results by adding new information (such as links)?
+ */
+
+function kclient_menu(){
+  $items = array();
+  $items['rnode'] = array(
+      'title' => 'Remote Content',
+      'page callback' => 'rnode_page_default',
+      'access arguments' => array('access content'),
+      'type' => MENU_CALLBACK,
+  );
+    $items['rnode/%rnode'] = array(
+        'title callback' => 'node_page_title',
+        'title arguments' => array(1),
+        'page callback' => 'rnode_view',
+        'page arguments' => array(1, FALSE, TRUE),
+        'access callback' => 'node_access',
+        'access arguments' => array('view', 1),
+        'type' => MENU_CALLBACK);
+    $items['rnode/%rnode/view'] = array(
+        'title' => 'View',
+        'type' => MENU_DEFAULT_LOCAL_TASK,
+        'weight' => -10);
+    
+    $items['kclient/gen'] = array(
+        'title'=>t('Widget Generator'),
+        'type' => MENU_CALLBACK,
+        'page callback' => '_kclient_gen',
+        'access arguments' => array('create kasahorow widget'),
+        );
+    
+    $items['kclient/wij'] = array(
+        'title'=>t('Widget'),
+        'type' => MENU_CALLBACK,
+        'page callback' => '_kclient_embed',
+        'access arguments' => array('access content'),
+                                  );
+    $items['kclient/callback'] = array(
+        'title'=>t('Widget'),
+        'type' => MENU_CALLBACK,
+        'page callback' => '_kclient_callback',
+        'access arguments' => array('access content'),
+                                  );
+  
+    $items['admin/content/kw/settings/kclient'] = array(
+        'type' => MENU_LOCAL_TASK,
+        'page callback'=> 'drupal_get_form',
+        'page arguments' => array('kclient_admin_settings'),
+        'title'=>t('Link settings'),
+        'access arguments'=>array('administer kDP'),
+        );
+    return $items;
+}
+
+
+/**
+ * Implemenation of kasahorow api
+ */
+function kclient_kwapi(&$kasa, $op, $a3 = NULL, $a4 = NULL){
+	$output = '';
+	switch($op){
+	    case 'admin':
+		$output = array(
+                    array(t('Database client'),
+                          t('Provides a search !block to search links in a
+                            remote or local database. Mode: !mode - !server.
+                            Or generate a widget to embed in another site -
+                            !gen',
+                            array(
+                             '!gen' => l('Widget Generator', 'kclient/gen'),
+                             '!mode' => variable_get('kclient_loc', 'local'),
+                             '!server' => check_markup(
+                              "http://".trim(variable_get('kclient_domain',''))
+                              ),
+                             '!block' => l(t('block'), 'admin/build/block',
+                                           array('query' =>
+                                                 drupal_get_destination()))
+                                )
+                           ),
+                          l(t('Settings'), 'admin/content/kw/settings/kclient',
+                            array('query'=>drupal_get_destination()))));
+		break;
+	}
+	return $output;
+}
+function kclient_perm(){
+    return array('search kasahorow', 'create kasahorow widget');
+}
+
+/**
+ *Each tab should be themeable
+ */
+function kclient_search($op = 'search', $keys = null, $limit=0){
+  global $base_url, $pager_page_array, $pager_total, $pager_total_items,
+      $user;
+  switch($op){
+    case 'name':
+      if(user_access('search kasahorow')){
+          return t(check_plain(variable_get('kclient_search_label', 'Links')));
+      }
+      break;
+  case 'search':{
+          if(user_access('search kasahorow')){
+              $results = array();
+              $link = search_query_extract($keys, 'link');
+              $link = $link?$link:_get_user_preferred_db();
+              list($from, $to) = split('\|', $link);
+              $from = trim($from);              
+              $to = trim($to);
+              $query = split("link:$from\|$to", $keys);
+              $searchterm = trim($query[0]);
+              switch(variable_get('kclient_loc', 'local')){
+		case 'local': {                               
+		  #Note that kentry_page imposes a deadline for results
+		  #so we may not necessarily get the full results if
+		  #kentry_page times out
+		  #Never use cached versions for $user->uid = 1
+		  $possmatches = kentry_page($searchterm, '', $from, 1,
+					     $limit, ($user->uid==1));
+		  
+		  $i = 0;
+		  $possmatches = is_array($possmatches)?$possmatches:array();
+		  foreach($possmatches as $vid=>$r){
+		      $i++;
+		      $node = $r;
+		      $snippet = theme('kentry_synonyms', $node, 1, $to);
+		      //Only show results user has expressed some pref for
+		      if($from == $to || strip_tags($snippet) || $to == '') {
+			$results[] = array(
+			    'link' => url('node/'. $node->nid,
+					  array('absolute' => TRUE)),
+			    'type' => check_plain(_name($node->iso)),
+			    'title' => $node->title,
+			    'user' => theme('username', $node),
+			    'date' => $node->changed,
+			    'node' => $node,
+			    'extra' => $node->title,
+			    'score' => (100*$r->grouping + $r->priority),
+			    'snippet' => $snippet,
+			    'domain' => $base_url,
+			  );
+		      }
+		  }
+		}
+                  break;
+		case 'remote':{
+		  $result =
+		      xmlrpc("http://".variable_get('kclient_domain',
+			  'dictionary.kasahorow.com')."/xmlrpc.php",
+			     'get.links',
+				  array(
+				      'key'=>trim(
+					variable_get('kclient_db_key',
+					  '')),
+				      'limit'=> variable_get(
+					  'kclient_limit', 10),
+				      'page'=>$_GET['page']
+				      ), $searchterm,
+				  $from, $to);
+		  if ($result === FALSE) {
+		      watchdog('kclient', 'Error %code: %message',
+			  array('%code' => xmlrpc_errno(),
+				'%message' => xmlrpc_error_msg()),
+			  WATCHDOG_ERROR);
+		  }else{
+		      $results = $result['results'];
+		      $pager_total_items = $result['paging']['items'];
+		      $pager_total = $result['paging']['total'];
+		      $pager_page_array = $result['paging']['array'];
+		  }
+		}
+		break;
+              }
+              return $results;
+          }
+      }
+  }
+}
+
+/**
+ *hook_form_alter
+ *TODO: Add auto-suggestions!
+ */
+function kclient_form_alter(&$form, $state, $id){
+  if ($id == 'search_form' && $form['module']['#value'] == 'kclient'){
+    
+    $query = split('link:', $form['basic']['inline']['keys']['#default_value']);
+    if(!empty($form['basic']['inline']['keys']['#default_value'])){
+      $form['basic']['inline']['keys']['#default_value'] = $query[0];   
+    }
+    $selected = (in_array(arg(0), array('all', 'browse')))?(arg(1).'|'):
+                    _get_user_preferred_db();
+    $form['link'] = array(
+        '#weight' => -1,
+        '#type' => 'select',
+        //'#title' => t('Use'),
+        '#default_value' => $selected,
+        '#prefix' => '<div class="criterion">',
+        '#suffix' => '</div>',
+        '#options' => _kclient_db_pairs(),
+        '#description'=>t('Powered by !kw',
+            array('!kw'=>l('kasahorow', 'http://kasahorow.org',
+                array('attributes'=>array('target'=>'kw'))))),
+      );
+    //Let's add some auto-complete goodness to local searches
+    if(variable_get('kclient_loc', '')=='local'){
+        $form['basic']['inline']['keys']['#autocomplete_path'] =
+            'kentry/check/';
+    }
+    
+    $form['#validate'][] = 'kclient_search_validate';
+  }
+}
+
+/**
+ * Triggered for any search type so ignore unless a link is specified
+ 
+function kclient_search_preprocess($keyword, $link){print $keyword;
+   if(substr($link, 0, 5)=="link:"){
+    print "aa";
+   }else{
+    print "BB";
+   }
+   return $keyword;
+}*/
+
+/**
+ * Various validations before hitting the database
+ * Do language-specific pre-parsing here
+ */
+function kclient_search_validate($form, &$state){
+    // Initialise using any existing basic search keywords.
+  $keys = $state['values']['processed_keys'];
+
+  // Insert extra restrictions into the search keywords string.
+  if (isset($state['values']['link'])) {
+    $keys = search_query_insert($keys, 'link', ($state['values']['link']));
+    setcookie("kwlink",$state['values']['link'], time() + ((3600 * 24) * 30),
+              '/');
+  }
+
+  if (isset($state['values']['category']) &&
+      is_array($state['values']['category'])) {
+    $keys = search_query_insert($keys, 'category',
+        implode(',', $state['values']['category']));
+  }
+  
+  if (!empty($keys)) {
+    form_set_value($form['basic']['inline']['processed_keys'],
+        trim($keys), $state);
+  }
+}
+
+/**
+ *Examine the kentry_synonyms table for any existing links
+ *and return those results instead...
+ */
+function kclient_block($op = 'list', $delta = 0, $edit = array()){
+    if($op == 'list'){
+        $blocks[0] = array('info'=>t('Search !type links',
+            array('!type'=>variable_get('kclient_loc', 'local'))));
+        return $blocks;
+    }elseif($op == 'view' && user_access('search kasahorow')){
+        switch($delta){
+            case 0:
+                $block['subject'] = '';
+                $keys = arg(1)=='kclient'?arg(2):''; 
+                $block['content'] = drupal_get_form('search_form',
+                        '?q=search/kclient', $keys, 'kclient', '');
+                break;
+        }
+        return $block;
+    }
+    
+}
+
+function kclient_admin_settings(){
+    $form = array();
+    $form['kclient_loc'] = array(
+        '#type'=>'radios',
+        '#options'=>array('local'=>t('Local'), 'remote'=>t('Remote')),
+        '#title'=>t('Location of links database'),
+        '#default_value'=>variable_get('kclient_loc', 'local'),
+        '#description' => t('Choose Local to search the links on this site.
+            Choose remote to search the links on the site specified below'),
+        );
+    $form['opt'] = array('#type'=>'fieldset',
+                         '#title'=>t('Remote search options'));
+    
+    //TODO: Fix this so that the scheme (http, https) is part of the setting
+    //affects all xmlrpc calls :( so have to fix everywhere too
+    $form['opt']['kclient_domain'] = array(
+        '#title' => t('Search remote domain'),
+        '#type' => 'textfield',
+        '#maxlength' => 255,
+        '#size'=>30,
+        '#description' => t('Enter the remote kasahorow database domain
+            to use for search results, e.g. <em>museke.com</em>.
+            Do not set to this site as it will cause an infinite loop.'),
+        '#default_value' => variable_get('kclient_domain',
+                                         'dictionary.kasahorow.com'),
+        '#field_prefix'=>'http://',
+        '#field_suffix'=>'/xmlrpc.php',
+      );
+    $form['opt']['kclient_db_key'] = array(
+        '#default_value'=>variable_get('kclient_db_key', ''),
+        '#type'=>'textfield',
+        '#title'=>t('Access key'),
+        '#description'=>t('The developer key for authenticating this site
+            to the remote server'),
+        );
+    $form['opt']['kclient_search_label'] = array(
+        '#default_value'=> variable_get('kclient_search_label', 'Links'),
+        '#type'=>'textfield',
+        '#title'=>t('Search tab label'),
+        '#description'=>t('The label displayed in the search !tab',
+                          array('!tab'=>l(t('tab'), 'search/kclient'))),
+        );
+    $form['opt']['kclient_limit'] = array(
+        '#default_value'=>variable_get('kclient_limit', 10),
+        '#type'=>'textfield',
+        '#title'=>t('Resultset limit'),
+        '#description'=>t('The number of results to request in each call.
+            The lower the better since it is less likely that your request
+            will time out at the remote server.'),
+        );
+    $form['opt']['kclient_locale'] = array(
+        '#default_value'=>variable_get('kclient_locale', 'ak'),
+        '#type'=>'textfield',
+        '#title'=>t('Locale'),
+        '#description'=>t('The language locale for all client queries'),
+        );
+    
+    
+    $db_pairs = array();
+    $db_names = array();
+    switch(variable_get('kclient_loc', 'local')){
+        case 'remote':
+            $url = "http://".trim(variable_get('kclient_domain',
+                'dictionary.kasahorow.com'))."/xmlrpc.php";
+            $result = xmlrpc($url, 'system.multicall',
+                array(
+                    array(
+                        'methodName'=>'get.db.pairs',
+                        'params'=>array(
+                            array(
+                                'key'=>_kdevel_key($user),                                
+                                'lang'=>variable_get('kclient_locale', 'ak')
+                                )
+                            )
+                        ),
+                    array(
+                        'methodName'=>'get.dbs',
+                        'params'=>array(
+                            array(
+                                'key'=>_kdevel_key($user),
+                                'lang'=>variable_get('kclient_locale', 'ak')
+                                )
+                            )
+                        ),
+                    )
+                );
+            if ($result === FALSE) {
+                watchdog('kclient', 'Error %code: %message',
+                    array('%code' => xmlrpc_errno(),
+                        '%message' => xmlrpc_error_msg()),
+                         WATCHDOG_ERROR);
+            }else{
+                $db_pairs = $result[0];
+                $db_names = $result[1];
+            }        
+            break;
+        default:
+        case 'local':
+            $db_pairs = _kw_db_pairs(variable_get('kclient_locale', 'ak'));
+            $db_names = _kasahorow_entry_types();
+            break;
+    }
+    //Save in cached variables
+    variable_set('kclient_db_names', $db_names);
+    variable_set('kclient_all_dbs', $db_pairs);
+    $form['opt']['kclient_enabled_dbs'] = array(
+        '#title'=>t('Database pairs'),
+        '#type'=>'select',
+        '#multiple'=>TRUE,
+        '#options'=>$db_pairs,
+        '#default_value'=>variable_get('kclient_enabled_dbs', array()),
+        '#description'=>t('If there are no pairs listed here then make sure
+                          at least one database links to another'),
+                                         );
+    return system_settings_form( $form );
+}
+
+
+function _get_user_preferred_db(){
+    global $user;
+    $db = 'ak|';
+    if($link = search_query_extract(arg(2), 'link')){
+        return $link;
+    }else if(isset($_COOKIE["kwlink"])){
+        return $_COOKIE["kwlink"];
+    }
+    return $db;
+}
+
+function _kclient_db_pairs(){
+    $pairs = array();
+    $pairs = array_intersect_key(variable_get('kclient_all_dbs', array()),
+        variable_get('kclient_enabled_dbs', array()));
+    ksort($pairs);
+    return $pairs;
+}
+
+/*
+ *Load remote node with nid $rnid
+ */
+function rnode_load($rnid){
+    $rnode = new StdClass();
+    $rnode->nid = $rnid;
+    
+    $result = xmlrpc("http://".variable_get('kclient_domain', 'dictionary.kasahorow.com')."/xmlrpc.php", 'get.node', 'some', $rnid);
+    if ($result === FALSE) {
+        watchdog('kclient', 'Error %code: %message', array('%code' => xmlrpc_errno(), '%message' => xmlrpc_error_msg()), WATCHDOG_ERROR);
+    }else{
+        $rnode = (object)$result;
+    }
+    return $rnode;     
+}
+
+function rnode_page_default(){
+    switch(variable_get('kclient_loc', 'local')){
+        case 'remote':
+            $url = variable_get('kclient_domain', '');
+            $result = xmlrpc("http://$url/xmlrpc.php", 'x.most.recent', 'some-key', (int)variable_get('default_nodes_main', 10), 'ak');
+            if ($result === FALSE) {
+                drupal_set_message(t('Error %code: %message', array('%code' => xmlrpc_errno(), '%message' => xmlrpc_error_msg())), 'error');
+                $output = node_page_default();
+            }else{
+                foreach($result as $rnid => $rnode){
+                    $output.= rnode_view((object)$rnode, 1);
+                }
+            }
+            break;
+        case 'local':
+            $output = node_page_default();
+            break;
+    }
+    return $output;
+}
+
+function rnode_view($node, $teaser=FALSE, $page=FALSE, $links=TRUE){
+    switch(variable_get('kclient_loc', 'local')){
+        case 'remote':
+            $node = node_build_content($node, $teaser, $page);
+            $output = theme('rnode', $node, $teaser, $page);
+            break;
+        case 'local':
+            $output = node_view($node, $teaser, $page, $links);
+            break;
+    }
+    return $output;
+}
+
+function kclient_theme(){
+  return array(
+    'rnode' => array(
+      'arguments' => array('node' => NULL, 'teaser' => FALSE, 'page' => FALSE),
+      'template' => 'rnode',
+    ),
+    );
+}
+
+function template_preprocess_rnode(&$variables){
+    //Inherit node's defaults before customizing
+    template_preprocess_node($variables);
+    //TODO: Change file paths to be remote paths
+    //Now change $node_url to point to the right remote node handler path
+    $variables['node_url']  = url('rnode/'. $variables['node']->nid);
+
+}
+
+/**
+ *Generate cut/paste code to embed a link search block
+ */
+function _kclient_gen() {
+  global $base_url, $user;
+  $options = form_select_options(array('#value' => $user->language,
+									   '#options' => 
+										  locale_language_list('native')
+									  )
+								);
+  $path = drupal_get_path('module', 'kclient');
+  drupal_add_js(array(
+      'kclient' =>
+          array('base_url'=>url('',
+              array('absolute'=>TRUE)))),
+                  'setting');
+  drupal_add_js($path."/kclient.js");
+  //drupal_add_css($path."/kclient.css");
+  $dbs = _kasahorow_entry_types();
+  $formdbs = array();
+  foreach($dbs as $code=>$name) {
+    $formdbs[] = "<input id='$code'
+        type='checkbox' name='dbs'
+        onchange='javascript:updatewidget();'/>
+        <label for='$code' id='label_$code'>$name</label>";
+  }
+  $rows = array_chunk($formdbs, 4, TRUE);
+  $output = '<div class="container">
+    <form id="options" action="">
+      <fieldset>
+        <legend>Configure Basic Options</legend>
+        <label for="width">Width:</label>
+        <input id="width" value="200px" type="text" onchange="javascript:updatewidget();" width="10"/>
+        <label for="height">Height:</label>
+        <input id="height" value="300px" type="text" onchange="javascript:updatewidget();" />
+        <label for "il">Interface language:</label>
+		<select id="il" onchange="javascript:updatewidget();">'.$options.'"</select>
+        <input id="key" value="'._kdevel_key($user).'" type="hidden" onchange="javascript:updatewidget();"<br />
+        <button type="button" id="advancedoptionsbutton" onclick="javascript:showhideadvanced();">Advanced Options</button>
+        <label for="spaceused">Option Space Used: </label>
+        <span id="spaceused"></span>
+      </fieldset>
+      <fieldset>
+      <legend>Choose Databases</legend>'
+        .theme('table', array(), $rows, array('width' => '100%')).'
+      </fieldset>
+      <div id="advancedoptions">
+        <fieldset>
+          <legend>Configure Advanced Options</legend>
+          <table>
+            <tr>
+              <td><label class="borderlb" for="borderwidth">Border Width:</label></td>
+              <td><input class="inbox" id="borderwidth" value="5px" type="text" onchange="javascript:updatewidget();" /></td>
+            </tr>
+            <tr>
+              <td><label class="borderlb" for="borderstyle">Border Style:</label></td>
+              <td><select class="inbox" id="borderstyle" onchange="javascript:updatewidget();">
+                <option value="inset">inset</option>
+                <option value="none">none</option>
+                <option value="hidden">hidden</option>
+                <option value="dotted">dotted</option>
+                <option value="dashed">dashed</option>
+                <option value="solid">solid</option>
+                <option value="double">double</option>
+                <option value="groove">groove</option>
+                <option value="ridge">ridge</option>
+                <option value="outset">outset</option>
+                </select>
+              </td>
+            </tr>
+            <tr>
+              <td><label class="borderlb" for="bordercolor">Border Color:</label></td>
+              <td><input class="inbox" id="bordercolor" value="#000000" type="text" onchange="javascript:updatewidget();" /></td>
+            </tr>
+            <tr>
+              <td><label for="padding">Padding:</label></td>
+              <td><input class="inbox" id="padding" value="10px" type="text" onchange="javascript:updatewidget();" /></td>
+            </tr>
+            <tr>
+              <td><label for="textcolor">Text Color:</label></td>
+              <td><input class="inbox" id="textcolor" value="#422C1A" type="text" onchange="javascript:updatewidget();" /></td>
+            </tr>
+            <tr>
+              <td><label for="linkcolor">Links Color:</label></td>
+              <td><input class="inbox" id="linkcolor" value="#A50000" type="text" onchange="javascript:updatewidget();" /></td>
+              <td><button type="button" id="swap" onclick="javascript:swapout();">Show/Hide Link</button><br /></td>
+            </tr>
+          </table>
+          <input type="radio" name="bgstuff" id="bgimage" value="bgimage" checked onchange="javascript:bgswitch();updatewidget();" />
+          <label for="bgimage">Background Image</label>
+          <input type="radio" name="bgstuff" id="bgcolor" value="bgcolor" onchange="javascript:bgswitch(\'bgcolor\');updatewidget();" />
+          <label for="bgcolor">Background Color</label>
+          <input id="backgroundlink" value="'.variable_get('xspf_playlist_thumb', '').'" type="text" onchange="javascript:updatewidget();" />
+          <input id="backgroundcolor" value="#FFFFFF" onchange="javascript:updatewidget();" type="text" />
+        </fieldset>
+      </div>
+      <fieldset>
+        <legend>Copy and paste</legend>
+        <label for="output">Copy and paste this code into your HTML</label>
+        <textarea id="output" rows="5" cols="43" readonly="readonly"></textarea>
+      </fieldset>
+    </form>
+  </div>        
+  <div class="container">
+    <div id="wijitidemo">
+      <form action="" id="wijiti">
+        <div class="surrounder">
+          <input type="text" id="word" disabled="disabled" />
+        </div>
+        <div class="surrounder">
+          <div id="fromto"></div>
+        </div>
+      </form>
+      <div id="outdiv">
+        <span id="results">Results Appear Here</span><br />
+        <span id="link">Sample Link Color</span><br />
+        <img src = "'.$path.'/ajax-loader.gif" alt="loader" />
+      </div>
+    </div>
+  </div>';
+    return $output;
+}
+
+
+function _kclient_wijiti_form($form_values, $options=array(),
+                              $properties=array()){
+    $form = array();
+    $form['link'] = array(
+        '#type' => 'select',
+        '#default_value'=>_get_user_preferred_db(),
+        '#prefix' => '<div class="criterion">',
+        '#suffix' => '</div>',
+        '#options' => $options,
+      );
+    $form['inline'] = array('#prefix' => '<div class="container-inline">',
+                            '#suffix' => '</div>');
+    $form['inline']['keys'] = array('#type'=>'textfield',
+        '#size'=>$properties['width']/10,
+        /*'#description'=>t('Powered by !kw',
+            array('!kw'=>l('kasahorow', 'http://kasahorow.org',
+                array('attributes'=>array('target'=>'kw'))))),*/);
+    $form['inline']['find'] = array('#type'=>'submit', '#value'=>t('Go'));
+    $form['devkey'] = array('#type'=>'value',
+        '#value'=>$properties['devkey']);
+    $form['#redirect'] = FALSE;  
+    $form['#validate'][] = 'kclient_search_validate';
+    $form['results'] = array(
+      '#type' => 'item',
+      '#value' => _kclient_callback($form_values),
+    );
+    return $form;
+}
+
+function theme__kclient_wijiti_form($form){
+    $output = '<div class="surrounder">';
+    $output .= drupal_render($form);
+    $output.= '</div>';
+    return $output;
+}
+
+
+function _kclient_embed(){
+    global $base_url;
+    //every dictionary widget will break if this is incorrect
+    $path = drupal_get_path('module', 'kclient');
+    $JSlocation = "$path/kclient.js";
+
+    //parse the settings for the widget from the GET array
+    $properties['width'] = $_GET['w'];
+    $properties['height'] = $_GET['h'];
+    $properties['textcolor'] = $_GET['tc'];
+    $properties['linkcolor'] = $_GET['lc'];
+    $properties['backimage'] = $_GET['bi'];
+    $properties['backcolor'] = $_GET['bc'];
+    $properties['borderwidth'] = $_GET['bw'];
+    $properties['borderstyle'] = $_GET['bs'];
+    $properties['bordercolor'] = $_GET['boc'];
+    $properties['padding'] = $_GET['p'];
+    $properties['dbs'] = $_GET['l'];
+    $properties['devkey'] = $_GET['d'];
+
+    //sets up the default value if the value was not passed
+    if ($properties['textcolor'] == "") {
+        $properties['textcolor'] = "#422C1A";
+    }
+    if ($properties['linkcolor'] == "") {
+        $properties['linkcolor'] = "#A50000";
+    }
+    if ($properties['height'] == "") {
+        $properties['height'] = "300";
+    }
+    if ($properties['width'] == "") {
+        $properties['width'] = "200";
+    }
+/*    if ($properties['backimage'] == "" and $properties['backcolor'] == "") {
+        $properties['backimage'] =
+            "http://www.kamusiproject.org/sites/all/themes".
+                "/paldo/images/kikoi1.jpg";
+    }*/
+    if ($properties['padding'] == "") {
+        $properties['padding'] = "10px";
+    }
+    if ($properties['dbs'] == "") {
+        $properties['dbs'] = "ak,en,sw,yo";
+    }
+    if ($properties['borderwidth'] == "") {
+        $properties['borderwidth'] = "5px";
+    }
+    if ($properties['borderstyle'] == "") {
+        $properties['borderstyle'] = "inset";
+    }
+    if ($properties['bordercolor'] == "") {
+        $properties['bordercolor'] = "#000000";
+    }
+    //this might need to change once the key system gets put in place
+    if ($properties['devkey'] == "") {
+        $properties['devkey'] = "developer-key";
+    }
+
+
+    //break out the passed langs into an array
+    $langlisttemp = explode(",",$properties['dbs']);
+    //set up the short -> full listing of langs
+    $langkey = _kdatabases();
+    $langlist = array();
+    //make an array of languages
+    foreach ($langlisttemp as $value) {
+        $langlist[$value] = $langkey[$value];
+    }
+    //create our list of translation options for the selection box
+    foreach ($langlist as $keyone => $valueone) {
+        foreach ($langlist as $keytwo => $valuetwo) {
+            if ($keyone != $keytwo) {
+                $options[$keyone.'|'.$keytwo] = $valueone.' >> '.$valuetwo;
+            }
+        }
+    }
+
+    //all the actual HTML is output below, with the settings spliced into it
+    echo('<!DOCTYPE html PUBLIC
+    "-//W3C//DTD XHTML 1.0 Strict//EN"
+    "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+    ');
+    echo('<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+    <meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+    <title>'.variable_get('site_name', '').' '.drupal_get_title().'</title>');
+    print '<link type="text/css" rel="stylesheet" media="all" href="'.
+        $base_url."/$path/kclient.css".'"/>';
+    
+    print drupal_get_js();
+    echo('<style type="text/css">');
+    echo('#results a {color:'.$properties['linkcolor'].';}');
+    echo('#kamusidictwidget {color:'.$properties['textcolor'].'; width:'.$properties['width'].'; height:'.$properties['height'].'; background-image:url('.$properties['backimage'].'); padding:'.$properties['padding'].'; border:'.$properties['borderwidth'].' '.$properties['borderstyle'].' '.$properties['bordercolor'].';background-color:'.$properties['backcolor'].';}');
+    echo('#word {width:'.$properties['width'].';}');
+    echo('#fromto {width:'.$properties['width'].';margin-left:2px;}');
+    echo('#outdiv {text-align:center;}');
+    echo('#results {color:'.$properties['textcolor'].';}');
+    echo('#loader {visibility:hidden;}');
+    echo('</style>
+    ');
+    echo('<script type="text/javascript" src="'.$JSlocation.'"></script>
+    ');
+    echo('</head>
+    <body>
+    ');
+    echo('<div id="wijiti" >');
+    if(user_access('create kasahorow widget')){
+        $modify = l(t('Modify widget'), 'kclient/gen',
+                    array('attributes'=>array('target'=>'wijiti')));
+    }
+    $path = drupal_get_path('module', 'kclient');
+    print drupal_get_form('_kclient_wijiti_form', $options, $properties); 
+    echo('<div id="outdiv">'.$modify);
+    echo('</div>
+    </body></html>');
+
+
+}
+
+function _kclient_callback($form_values){
+    //the three things we need to know to translate
+    //the languages we are going from and the one we are going to
+    $fromto = $form_values['post']['link'];
+    //the developer key for accessing the data
+    $properties['devkey'] = $_POST['devkey'];
+    //the word we translate
+    $word = $form_values['post']['keys'];
+    //split out the fromto into from and to
+    $from = substr($fromto,0,strpos($fromto,">"));
+    $to = substr($fromto,strpos($fromto,">")+1);
+    $results = array();
+    if(_valid_key($properties['devkey'])){
+        $results = kclient_search('search', "$word link:$fromto");
+    }
+    if(!$word){
+        $output.="<p class='help'>Type in a word to lookup</p>";
+    }else if (!count($results)){
+        $output = "<p>No Results for $word $fromto</p>";
+    }else{
+        $output = '<dl id="results">';
+        foreach($results as $key=>$result){
+            $output.= '<dt class="wentry">'.l($result['node']->title, $result['link']);
+            $output.= empty($result['node']->partofspeech)?'':
+        ' <em>'.l($result['node']->taxonomy[$result['node']->partofspeech]->name,
+            $result['domain']."/taxonomy/term/".$result['node']->partofspeech,
+            array('attributes'=>array('rel'=>'lightframe',
+                                      'target'=>'kw'))).'</em>';
+            $output.= '</dt>';
+            $output.= '<dd class="defn">'.$result['snippet'].'</dd>';
+            $output.= '<dd>';
+            $output.= l(t("Discuss"),
+                      $result['domain']."/comment/reply/".$result['node']->nid,
+                      array('fragment'=>'comment-form',
+                            'attributes'=>array('rel'=>'lightframe')));
+            $output.= " | <span class='readmore'>".l(t('more detail...'), $result['link'])."</span>";
+            $output.= '</dd>';
+        }
+        $output.= '</dl>';
+    }
+    return $output;
+}

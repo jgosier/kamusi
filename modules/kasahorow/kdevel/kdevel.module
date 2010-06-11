@@ -1,0 +1,413 @@
+<?php
+/**
+ * @file: Miscellaneous tools to help with kDP debugging and maintenance
+ */
+
+function kdevel_menu(){
+  $items = array();
+  $items['kdevel/pushsync'] = array(
+	'type' => MENU_CALLBACK,
+	'page callback' => '_kdevel_sync',
+	'page arguments' => array(2),
+	'access arguments' => array('access content'),
+  );
+  $items['node/%node/kdevel']  = array(
+          'type' => MENU_CALLBACK,
+          'page callback' => '_knode_callback',
+          'page arguments' => array(1),
+          'access callback' => 'user_access',
+          'access arguments' => array('administer kDP'),
+  );
+  $items['admin/content/kw/kentry/papa']  = array(
+          'type' => MENU_CALLBACK,
+          'page callback' => '_kdevel_callback',
+          'page arguments' => array(5),
+          'access callback' => 'user_access',
+          'access arguments' => array('administer kDP'),
+  );
+  $items['admin/content/kw/kentry/papa/%/links']  = array(
+          'type' => MENU_CALLBACK,
+          'page callback' => '_klink_report',
+          'page arguments' => array(5),
+          'access callback' => 'user_access',
+          'access arguments' => array('administer kDP'),
+  );
+  $items['admin/content/kw/settings/kdevel']  = array(
+          'type' => MENU_NORMAL,
+          'title' => t('kDP Developer Settings'),
+          'page callback' => 'drupal_get_form',
+          'page arguments' => array('_kdevel_settings'),
+          'access callback' => 'user_access',
+          'access arguments' => array('administer kDP'),
+  );
+  return $items;
+}
+
+function kdevel_perm(){
+  return array('administer kDP');
+}
+
+function _klink_report($db) {
+  global $pager_total;
+  $name = _name($db);
+  drupal_set_title(t('@db link report details', array('@db' => $name)));
+  switch($_GET['dxn']) {
+    case 'to':
+      $col = 'svid';
+      break;
+    case 'from':
+    default:
+      $col = 'vid';
+      break;
+  }
+  $output = '<style>.vid{background-color:#0ff;} .svid{background-color:#ff0;}</style>';
+  $output.= l(t('@db entries that do not link to any other entry',
+		array('@db' => $name)), $_GET['q'],
+	      array('query' => 'dxn=from',
+		    'attributes' => array('class' => 'vid')));
+  $output.= ' | ';
+  $output.= l(t('@db entries that are not linked to by any other entry',
+		array('@db' => $name)), $_GET['q'],
+	      array('query' => 'dxn=to',
+		    'attributes' => array('class' => 'svid')));
+  $output.= t('<br/>@num entries', array('@num' => $pager_total[0]));
+  $output.= '<ul class="'.$col.'">';
+  $synq = db_query("SELECT $col FROM {kentry_synonyms}");
+  $synset = array(-1);
+  while($r = db_fetch_object($synq)) {
+    $synset[] = $r->$col;
+  }
+  $q = pager_query(sprintf("SELECT vid FROM {kentry}
+		   WHERE iso='%s' AND vid NOT IN
+		    (%s)", $db, join(',', $synset)),
+		    3*variable_get('kasahorow_entries_per_page', 10));
+  while($r = db_fetch_object($q)) {
+    $node = node_load(array('vid' => $r->vid));
+    $output.= '<li>'.l($node->title, "node/$node->nid",
+		       array('attributes' => array('target' => '_blank'))).'</li>';
+  }
+  $output.= '</ul>';
+  
+  return $output.theme('pager');
+}
+
+/**
+ * Show a node link if user has sufficient privileges
+ */
+function kdevel_link($type, $node=0, $teaser=0){
+    $links = array();
+    if(user_access('administer kDP') && 'node'==$type){
+        $links['kdevel_links'] = array(
+        'title'      => "kAnalyse",
+        'href'       => "node/$node->nid/kdevel",
+        'html'       => TRUE,
+        ); 
+    }
+    return $links;
+}
+
+
+/**
+ * Generate a Developer's key from the site's base_url and the user's email address
+ */
+function kdevel_user($op, &$edit, &$account, $category = NULL){
+    switch($op){
+	      case 'view':
+                if(user_access('use kapi', $account) && $account->status){
+		//$account->content['kdevel'] = array('#type'=>'user_profile_category', '#title'=>t('fie.nipa'));
+		  $account->content['kw']['devel'] =  array(
+		    '#type' => 'user_profile_item',
+		    '#title' => t('Developer Key'),
+		    '#value' => _kdevel_key($account),
+		    '#attributes' => array('class' => 'stall'),
+		  );
+                }
+    }
+}
+/**
+ * Display quantitative measures of quality
+ * 3. Have pictures/other attachments
+ * 4. Have a non-empty defn
+ * 5. Connections to other dbs
+ * 6. Have an example
+ * 7. Size relative to other dbs
+ */
+function _kdevel_callback($db=NULL) {
+    $dbs = _kdatabases();
+    $rows = array();
+    $output = t('Databases: ');
+    $links = array();
+    foreach($dbs as $iso => $name) {
+        $links[] = l($name, "admin/content/kw/kentry/papa/$iso");
+    }
+    $output.= join(' | ', $links);
+    if($db!=NULL){
+        $title = t('Quality report for %name database',
+                                         array('%name'=>$dbs[$db]));
+        drupal_set_title($title);
+        $rows = _kget_reports($db);
+        $output.= theme('table', array($title, t('Is'),
+                                       t('Should be')), $rows,
+                        array('width'=>'100%'));
+    }
+    return $output;
+}
+
+
+function _knode_callback($node){
+  $output = l(t('Return to %entry',
+                array('%entry' => $node->title)), "node/$node->nid",
+              array('html' => 1));
+  foreach(_kdevel_node_tests() as $testfn){
+      $output.=$testfn($node);
+  }
+  _kentry_update_cache($node); //Clear the cache to end with
+  return $output;
+}
+
+
+function _kdevel_node_tests(){
+    return array(
+        '_knode_dups',        
+        '_knode_links',
+        '_knode_convert',
+        );
+}
+
+/**
+ * Analyse this node to find out if there are other nodes like it
+ */
+function _knode_dups($node, $raw=FALSE){
+    if($raw){
+        $q = db_query("SELECT * FROM {node} n
+                         INNER JOIN {kentry} k ON n.vid=k.vid
+                         WHERE n.title LIKE '%%%s%%'
+                         AND k.iso LIKE '%s'", trim($node->title),
+                         trim($node->iso)
+                        );
+    }else{
+        $q = db_query("SELECT * FROM {node} n
+                      INNER JOIN {kentry} k ON n.vid=k.vid
+                      WHERE n.title LIKE '%%%s%%' AND n.nid!=%d
+                      GROUP BY n.vid", trim($node->title), trim($node->nid));
+    }
+    $header = array( 'LINKS', 'TYPE', 'NID', 'TITLE', 'ROOT', 'DISTANCE TO '.$node->title, '');
+    $rows = array();
+    
+    while($r = db_fetch_object($q)){
+        $editdistance = levenshtein($node->title, $r->title);
+        $count = db_result(db_query("SELECT COUNT(*) FROM {kentry_synonyms} WHERE vid=%d OR svid=%d", $r->vid, $r->vid));
+        $rows[] = array($count, 'type'=>$r->type, 'nid'=>$r->nid, $r->title, $r->word, 'dist'=>$editdistance, l(t('Inspect'), "node/$r->nid", array('attributes'=>array('target'=>'i'))));
+    }
+    
+    if($raw){
+        return $rows;
+    }else{
+        return theme('table', $header, $rows, array('width'=>'100%'), 'Duplicate analysis');
+    }
+}
+
+
+/**
+ * Convert node from one type to another
+ */
+function _knode_convert($node){
+    drupal_set_title(t("Analyse %title", array('%title'=>$node->title)));
+    $rows["000"] = array(array('data'=>t('Convert !node to new kasahorow database type', array('!node'=>l($node->title."("._name($node->iso).")", "node/$node->nid"))), 'colspan'=>5));
+    $q = db_query("SELECT * FROM {kdictionary} WHERE iso NOT LIKE '%s' ORDER BY name", $node->iso);
+    while($r = db_fetch_object($q)){
+        $status = (($_GET['change']=='true') && (arg(3)==$r->iso));
+        $rows[] = array(l($status?"CONFIRM change to $r->name":"Change nodetype to $r->name", "node/$node->nid/kdevel/$r->iso",
+                          array('query'=>$status?'confirm=true':'change=true')),
+                        l($status?"Cancel":"", "node/$node->nid/kdevel"));
+    }
+    if($_GET['confirm']=='true'){
+        $iso=arg(3);
+        if(db_result(db_query("SELECT COUNT(iso) FROM {kdictionary} WHERE iso LIKE '%s'", $iso))){
+            $q1 = sprintf("UPDATE {node} n set n.`type`='kentry_$iso' WHERE n.vid=$node->vid");
+            $q1b = sprintf("UPDATE {kentry} k set k.updated=%d , k.iso='$iso' WHERE k.vid=$node->vid", time());
+            $success = (db_query($q1) && db_query($q1b));
+            if(!$node->eid){//It means this node is not in the kentry table already so copy the node body into the definition field
+                $q2 = sprintf("INSERT INTO {kentry}(vid, defn, iso) (SELECT vid,body, \"$iso\" FROM {node_revisions} WHERE vid=$node->vid LIMIT 1)");
+                $success = $success && db_query($q2);
+            }
+            if($success){
+                drupal_set_message("$node->title converted to kasahorow database type $iso");
+            }else{
+                drupal_set_message("$node->title conversion to kasahorow database type $iso failed", 'warning');
+            }
+            drupal_goto("node/$node->nid/kdevel");
+        }
+    }
+    return theme('table', $header, $rows, array('width'=>'100%'), 'Convert to another node type');
+}
+
+/**
+ *Analyse the links to this node
+ */
+function _knode_links($node){
+  $header = array('Type', 'Recursion level', 'Database', 'Node');
+  $rows = array();
+  $level = 0;
+  if(is_array($node->relations)){
+    foreach($node->relations as $rel => $info){
+      foreach($node->relations[$rel] as $vid=>$props){
+        $rows[] = array($rel, $props['level'], _name($props['type']),
+                        l($props['title'], "node/$props[nid]",
+                          array('html'=>1, 'attributes' =>
+                                array('target'=>'props'))));
+      }
+    }
+  }
+  return theme('table', $header, $rows,
+               array('width'=>'100%'), 'Analyse node links');
+}
+
+/**
+ * Generate quantitative measures of quality
+ * 1. Term clustering -- what percentage of entries have a 'partofspeech' set?
+ * 2. Approval status
+ * 3. Have pictures/other attachments
+ * 4. Have a non-empty defn
+ * 5. Connections to other dbs
+ * 6. Have an example
+ * 7. Size relative to other dbs
+ */
+function _kget_reports($db){
+  if($cached = cache_get("kdevel:$db")){
+    return $cached->data;
+  }
+  $where = " WHERE iso='$db'";
+  $db_dict = db_fetch_object(db_query("SELECT * FROM {kdictionary} $where"));
+  $indices = unserialize($db_dict->index);
+  $links = array();
+  $atotal = db_result(db_query("SELECT COUNT(eid) FROM {kentry} $where"));
+  $total = $atotal>0?$atotal:1;
+  $pos = db_result(db_query("SELECT COUNT(eid) FROM {kentry}
+                            $where AND partofspeech>0 "));
+  $approved = db_result(db_query("SELECT COUNT(eid) FROM {kentry}
+                                 $where AND approved=1 "));
+  $pending = db_result(db_query("SELECT COUNT(eid) FROM {kentry}
+                                $where AND approved=0 "));
+  $napproved = db_result(db_query("SELECT COUNT(eid) FROM {kentry}
+                                  $where AND approved=-1 "));
+  $defn = db_result(db_query("SELECT COUNT(eid) FROM {kentry}
+                             $where AND TRIM(defn) NOT LIKE '' "));
+  $fields = array();
+  $fields_q = db_query("SELECT * FROM {kentry_fields}
+      WHERE iso LIKE '%s'", $db);
+  while($fields_r = db_fetch_object($fields_q)){
+      $is = db_result(db_query("SELECT COUNT(*) FROM {kentry_values}
+          WHERE kfid=%d AND VALUE NOT IN ('')", $fields_r->kfid));
+      $fields[$fields_r->kfid] = array('Field: '.$fields_r->label,
+          sprintf("%d (%.2f%%)", $is, 100*$is/$total), '');
+  }
+  $linked = db_result(db_query("SELECT COUNT(DISTINCT(vid)) FROM {
+                               kentry_synonyms} WHERE vid IN
+                               (SELECT vid FROM {kentry} WHERE iso='%s')", $db)
+                      );
+  $dbname = _name($db);
+  foreach($indices as $index){
+    $name = _name($index);
+    $links[$index."_size"] = array("Size compared to $name",
+                                     sprintf("$name is %.2f%% the size of $dbname",
+                                             (100*db_result(db_query("SELECT COUNT(*) FROM {kentry} WHERE iso LIKE '$index'"))/$total)), "");
+      $crosslink = db_result(db_query("SELECT COUNT(*) FROM {kentry_synonyms} 
+                                      WHERE vid IN
+                                      (SELECT vid FROM {kentry} WHERE iso='%s')
+                                      AND svid IN
+                                      (SELECT vid FROM {kentry} WHERE iso='%s')", $db, $index));
+      $links[$index."_links"] = array("Links to $name",
+                                      sprintf("%d. i.e. %.2f%% of $dbname is linked to $name", $crosslink, 100*$crosslink/$total), "");
+  }
+  $report = array_merge(array(
+                          'total' => array(t('Total number of entries'), $atotal, ''),
+                          array("With primary category", sprintf("$pos (%.2f%%)", ($pos/$total*100)), '100%'),
+                          array("Approved", sprintf("$approved (%.2f%%)", ($approved/$total*100)), '100%'),
+                          array("Waitlisted", sprintf("$pending (%.2f%%)", ($pending/$total*100)), '0%'),
+                          array("Not approved", sprintf("$napproved (%.2f%%)", ($napproved/$total*100)), '0%'),
+                          array("With definition", sprintf("$defn (%.2f%%)", ($defn/$total*100)), '100%'),
+                          array("With links", sprintf("$linked  (%.2f%%)", ($linked/$total*100)), '100%'),
+                          array("Size compared to whole site", sprintf("%.2f%%", (100*$atotal/(db_result(db_query("SELECT COUNT(eid) FROM {kentry}"))))), ''),
+                          ),
+                     $fields,
+                     $links);
+  cache_set("kdevel:$db", $report, 'cache', CACHE_TEMPORARY);
+  return $report;
+}
+
+
+/**
+ * Generate a Developer's key from the site's base_url and the user's email address
+ */
+function _kdevel_key($user){
+    if($user->status){
+        return md5(variable_get('kdevel_hash_salt', 'kDP').$user->created);
+    }else{
+        return t('User account blocked. No developer key available');
+    }
+}
+
+function _kdevel_settings(){
+    $form = array();
+    $form['kdevel_entries_limit'] = array('#title' => t('Number of most recent entries returned'),
+                    '#type' => 'textfield',
+                    '#default_value' => variable_get('kdevel_entries_limit', 10),
+                   );
+                    
+    return system_settings_form($form);
+}
+
+/**
+ * TODO: Check access permissions for developer key
+ */
+function _valid_key($key, $perm=NULL){
+    
+    return TRUE;
+}
+
+/**
+ * Implemenation of kasahorow api
+ */
+function kdevel_kwapi(&$kasa, $op, $a3 = NULL, $a4 = NULL){
+	$output = '';
+	switch($op){
+		case 'admin':
+		$output = array(array(t('Developer tools'), 'For developers', 'Node (kAnalyse), Database (Quality)'));
+		break;
+		case 'kentry':
+		switch($a3){
+			case 'example':
+		//	$output = array('kentry'=>'hahaha');
+			break;
+			case 'synonyms':
+		//	$output = array(array('source'=>t('Automatic'), 'body'=>_other_synonyms($a4)));
+			break;		
+		}
+		break;
+	}
+	return $output;
+}
+
+function _kdevel_sync($client = '') {
+  if(empty($client)) {
+	print 'Specify a client key to sync.';
+  }else {
+	$nodes = array();
+	$nids = array();
+	$node_list = _kentry_sync($client, 21);
+	# $nodes must be list array otherwise it's interpreted as a Python dict
+	# on a Python XMLRPC server instead of as a Python list
+	foreach($node_list as $node) {
+      $nodes[] = _sanitize_node($node);
+	  $nids[] = $node->nid;
+    }
+	$server = variable_get('kdevel_sync_server', '');
+	$result = xmlrpc($server,
+					 'app.import_entries', $nodes);
+	$output.= sprintf('Pinging %s with %s nodes', $server, count($nodes));
+	$output.= sprintf('<hr/>Response: %s<hr/>', var_export($result, 1));
+	$output.= join(', ', $nids);
+	print $output;
+  }
+}

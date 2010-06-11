@@ -1,0 +1,38 @@
+body{font-family:"Arial Unicode MS", "Lucida Sans Unicode", "Gentium", "Arial", "Monospace"}
+.dictionary{border: 1px solid #000;margin-bottom: 1em;margin-right: 1em; width: 97%;height: auto; /* for IE*/padding: 5px 5px 5px 5px; }
+.dictionary #name {font-size: 1.4em;}
+.kentry {border-bottom: 1px dotted #EEE;margin-bottom: 3px;margin-right: 1px;float: left;width: 100%;min-height:6em;  padding: 5px 5px 5px 5px;font-size: 12px;}
+.node{clear:both;}
+.wordclass{margin-bottom: 3px;margin-right: 1px;padding: 1px 1px 1px 1px;font-size: 11px;text-align:left;}
+#includes{clear:both;}
+.kentrywide{border: 1px solid #EEE;margin-bottom: 3px;margin-right: 1px; padding: 5px 5px 5px 5px;font-size: 12px;}
+.state0{border-top: 1px solid #fee;}
+.state-1{border-top: 1px solid #ef0;}
+.name{clear:both;}
+#desc {padding: 2px 2px 2px 2px;font-size: .8em;}
+span#help{text-align:right;vertical-align:super;font-size: .8em;}
+.fulldictionary{border: 1px solid #000;margin-bottom: 1em;margin-right: 1em;float: left;width: 95%;min-height: 7em;padding: 5px 5px 5px 5px;}
+.fulldictionary#edit-keys {width:85%; clear:both;}
+.entrypage{margin-bottom: 1em;margin-top: 1em;float: left;width: 95%;min-height: 7em;padding: 5px 5px 5px 5px;}
+label, #includes{font-style:italic;font-size: 10px;font-weight:bold;}
+.structure{margin-bottom: 3px;margin-right: 1px;float: left;width:inherit;padding: 5px 5px 5px 5px;font-size: 12px;}
+.meaning{margin-bottom: 3px;margin-right: 1px;float: left;width: 95%;padding: 5px 5px 5px 5px;font-size: 12px;}
+.reviewstatus, .citation{clear:both;padding: 5px 5px 5px 5px; margin-bottom:5px;}
+.citation{border: 1px dashed gray;}
+.derivation{font-style: italic;font-weight: bold;}
+#edit-submit{margin:0;}
+#more{position:relative; bottom:-8px; float:right;}
+.thumb{border: 1px solid #999; border-width: 0 2px 2px 0; vertical-align:middle; padding:1px; margin:5px;}
+ul.kgallery{list-style-type : none;margin : 0;padding : 0;}
+ul.kgallery li { border : 1px #ccc solid;  margin:0;  padding : 1px 5px 15px 1px; }
+ul.kgallery li img { float : left;padding-right : 4px;margin-right : 4px;}
+.variant ul {padding:10px; list-style-type:none; }
+.variant ul li {display:inline; margin:10px; border:none;}
+div.kw_top input#edit-keys{width:85%;}
+div.kw_left{width:50%; float:left; padding-right:10px;}
+div.kw_right{width:auto;}
+.ui-tabs-hide{ display:none; }
+.ui-tabs-nav li { float: left; margin: 0 0 0 5px; list-style-type:none; font-size:1.2em; font-weight: bold; padding:3px 5px 1px;}
+ul.kw_home_menu{ position:relative; bottom:-1px; margin-bottom:0px; padding:0px; border-bottom: none;   border-color: #bbb; }
+.kw_body{ border:1px solid #bbb; padding:5px; width:94%}
+.ui-tabs-selected { background-color: #fff; border: 1px solid #bbb; border-bottom: #fff 1px solid;}

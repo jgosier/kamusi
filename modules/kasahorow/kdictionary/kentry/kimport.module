@@ -1,0 +1,247 @@
+<?php
+/*
+ * Import into kdictionary and kentry tables from a kasahorow RSS file
+ * To import more than 50 entries at a time, make sure to set the isadmin:1 property
+ */
+ 
+function kimport_menu(){
+    $items = array();
+    $items['kw/import'] = array(
+        'title' => t('Import database entries'),
+        'page callback' => 'drupal_get_form',
+        'page arguments' => array('_kimport'),
+        'access arguments' => array('import entries'),
+     	);  
+  return $items;   
+}
+
+function kimport_perms(){
+	 return array('import entries');
+}
+
+/**
+ * 
+ */
+function _kimport() {
+    $form = array();
+    $form['props'] = array(
+			  '#type' => 'textarea',
+			  '#title' => t('Properties'),
+			  '#default_value' => '',
+			  '#cols' => 60,
+			  '#rows' => 10,
+			  '#description' => '',
+			);
+    $form['data'] = array(
+			  '#type' => 'textarea',
+			  '#title' => t('Entries'),
+			  '#default_value' => '',
+			  '#cols' => 60,
+			  '#rows' => 20,
+			  '#description' => t('Tab-delimited entries. Maximum of 50 entries at a time')
+			);
+    $form['go'] = array (
+            '#type'=>'submit',
+            '#value' => t('Import')
+            );
+
+    return $form; 
+}
+
+/**
+ * Check that the props file has all the relevant properties. And that the file format is TSV
+ */
+function _kimport_validate($state, &$values){
+    $properties = split("\n",$values['values']['props']);
+    $importfile = split("\n",$values['values']['data'], 11); //Always validate against the first 11 lines (header+10 entries)
+    
+    //Parse the properties file
+    $props  = array();
+    foreach($properties as $line){
+        //If line begins with a # treat it as a comment
+        if($line[0] != '#'){
+            list($key,$value) = split("=", trim($line));
+            if($key){
+                $props[$key] = $value;
+            }
+        }
+    }
+    
+    /**
+    * The main properties are
+    * type:xml OR tsv
+    * header:<linenumber on which column names are, typically 0>
+    */
+   switch($props['process']){
+       /*TODO:
+        case 'xml':
+           $parser='xmlparse';
+           break;*/
+       case 'tsv':
+           $parser = 'tsvparse';
+           $props['parser'] = $parser;
+           break;
+   }
+   //Set these properties for the _submit handler
+   $values['values']['parser'] = $parser;
+   $values['values']['props'] = $props;
+   
+    //Is this dbase turned on in the first place?
+    if(!db_result(db_query("SELECT status FROM {kdictionary} WHERE iso LIKE '%s'", $props['p:iso']))){
+        form_set_error('props', t('This database has not been turned On and so you cannot import into it'));
+    }
+    if(isset($parser)){
+        $header = array();
+        foreach($importfile as $key=>$node){
+            //A TSV file node is a line
+            //TODO: An XML file node is the section enclosed in <kentry> tags
+            if($key == $props['header']){
+                $header = split("\t", $node);
+                $values['values']['header'] = $header;
+            }else{
+                if(trim($node)){
+                    $values['parsed'][$key] = $parser($header, $node, $props);
+                }
+            }
+        }
+    }else{
+        form_set_error('props', t('The %prop has not been set. Available options are %prop', array('%prop'=>'process', 'tsv')));
+    }
+    if($props['p:type'] != "kentry_".$props['p:iso']){
+        form_set_error('props', $props['p:type']." does not correspond to ".$props['p:iso']);
+    }
+    if(empty($props['k:title'])){
+        form_set_error('props', "Title not set");
+    }
+    if(!isset($props['header'])){
+        form_set_error('props', "Header row (usually line 0) of data not set");
+    }
+    if(empty($props['isadmin']) && count($values['parsed'])>51){//50 entry rows + 1 header row
+        form_set_error('props', "You cannot import more than 50 entries at a time");
+    }
+}
+
+
+/**
+ *TODO: Does not seem to work if file access is set to Public instead of Private
+ */
+function _kimport_submit($state, $values){
+    //Write the rest of the data to file
+    $dir = file_directory_path();
+    $data_file = file_save_data($values['values']['data'], file_create_filename(sprintf("%s_%d",$values['values']['props']['p:iso'],time()), $dir), $dir);
+    $batch = array(
+        'title' => t('Importing data into %db', array('%db'=>_name($values['values']['props']['p:iso']))),
+        'operations' => array(
+            array('_batch_parse_data', array($data_file, $values['values']['props'], $values['values']['header'])),
+        ),
+        'finished' => '_batch_parse_data_finished',
+        'error_message' => t('The data import failed on row @linenumber. All entries after this row were not imported'),
+        );
+    batch_set($batch);
+}
+
+/**
+ *
+ */
+function _batch_parse_data($data_file, $data_properties, $header, &$context){
+    if (empty($context['sandbox'])) {
+        $context['sandbox']['buffer_size'] = 17721; //Read ~1meg chunks
+        $context['sandbox']['file_size'] = filesize($data_file);
+        $context['sandbox']['file_pointer'] = fopen($data_file, 'r');
+        $context['sandbox']['progress'] = 1;
+        $context['sandbox']['current_node'] = 0;
+        $context['sandbox']['part'] = 0; //Use this to count the filesize
+        $context['sandbox']['max'] = count(file($data_file));
+    }
+    $context['message'] = t('@num lines processed out of @max lines', array('@num'=>$context['sandbox']['progress'], '@max'=>$context['sandbox']['max']));
+    
+    $read = $context['sandbox']['buffer_size'];
+    $rbuf = ($context['sandbox']['part']<$context['sandbox']['file_size'])?fread($context['sandbox']['file_pointer'], $read):"";
+    if($rbuf){
+        for($i=$read;$i > 0 || $n == chr(10);$i--) {
+            $n=substr($rbuf, $i, 1);
+            if($n == chr(10)){
+                break;
+            }elseif(feof($context['sandbox']['file_pointer'])){//If we are at the end of the file, just grab the rest and stop loop
+                $i = $read;
+                $buf = substr($rbuf, 0, $i+1);
+                break;
+            }
+        }
+        $buf = substr($rbuf, 0, $i+1);
+        $context['sandbox']['part'] = ftell($context['sandbox']['file_pointer'])-($read-($i+1));
+        fseek($context['sandbox']['file_pointer'], $context['sandbox']['file_part']);
+        $lines = split("\n",$buf);
+        foreach($lines as $key=>$line){
+            if(trim($line)){
+                $node = $data_properties['parser']($header, $line, $data_properties);
+                if($node!=NULL){
+                    node_save($node); //TODO: Use the form processor,drupal_execute, instead?
+                    $context['results'][] = $node->nid .' : '. $node->title;
+                    $context['message'].= "<br/>".t('@node imported', array('@node'=>$node->title));
+                }
+            }            
+        }
+        $context['sandbox']['progress'] = $context['sandbox']['progress'] + count($lines); //Increment the number of lines
+    }else{
+        ++$context['sandbox']['progress']; //Still count so we don't get stuck in an infinite loop
+    }
+
+    if ($context['sandbox']['progress'] < $context['sandbox']['max']) {
+        $context['finished'] = $context['sandbox']['progress'] / $context['sandbox']['max'];
+    }  
+}
+
+function _batch_parse_data_finished($success, $results, $operations) {
+    if ($success) {
+        $message = format_plural(count($results), 'One entry imported.', '@count entries imported.');
+    } else {
+        $message = t('Finished with an error.');
+    }
+    drupal_set_message($message);
+    // Providing data for the redirected page is done through $_SESSION.
+    foreach ($results as $result) {
+        $items[] = t('Loaded node %title.', array('%title' => $result));
+    }
+    $_SESSION['my_batch_results'] = $items;
+}
+
+/**
+ *Parse TSV lines. Return a node if the line is parsable, otherwise return NULL
+ */
+function tsvparse($header, $line, $props){
+    $edit = $node = $map = array();
+    $entry = split("\t", trim($line));
+    if((count($header)==count($entry)) && ($header!=$entry)){
+        $edit = array_combine($header, $entry);
+    }else{
+        return NULL; //Not a valid node
+    }
+    //Now construct the node
+    foreach($props as $key=>$val){
+        $prop=substr($key,2); 
+        if((substr($key, 0,2))=='p:'){//These are the preset values so they are not read from $edit
+           $node[$prop] = chop($val);
+        }else if((substr($key, 0,2))=='k:'){//These are imported values
+            if(strpos($prop, ":")){//this is an array type. Split accordingly and merge into node
+                $node = array_merge_recursive($node, _my_unserialize($prop, $edit[$val]));
+            }else{
+                $node[$prop] = chop($edit[$val]);
+            }    
+        }
+    }
+    $node = (object)$node;
+    return $node;
+}
+
+/**
+ * Build an array path a[b][c]=d from a formatted string a:b:c=d
+ */
+function _my_unserialize($serialized_key, $value){
+    if($pos = strpos($serialized_key, ":")){
+        $ret[substr($serialized_key, 0, $pos)] = _my_unserialize(substr($serialized_key,$pos+1), $value);
+        return $ret;
+    }else{
+        return array($serialized_key=>$value);
+    }
+}

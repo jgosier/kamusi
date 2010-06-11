@@ -1,0 +1,6 @@
+name = "kasahorow Database Downloader"
+description = "Download in specific formats"
+dependencies[] = kentry
+package = "kasahorow Tools"
+version = Testing
+core = 6.x

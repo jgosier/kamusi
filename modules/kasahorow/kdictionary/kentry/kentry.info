@@ -1,0 +1,7 @@
+;$id $
+name = "kasahorow Content Publisher"
+description = "Define content types and publish content"
+package = "kasahorow Tools"
+dependencies[] = kasahorow
+version = Ready
+core = 6.x

@@ -1,0 +1,19 @@
+<?php
+    class kdevel_module extends DrupalWebTestCase{
+
+    var $admin_user;
+    var $web_user;
+    var $node;
+    
+    function getInfo() {
+      return array(
+        'name' => t('Test kdevel.module'),
+        'description' => t('Test every function in kdevel.module.'),
+        'group' => t('fie.nipa Platform'),
+      );
+    }
+  
+    function setUp() {
+      parent::setUp();
+    }
+}

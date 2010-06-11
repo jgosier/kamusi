@@ -1,0 +1,6 @@
+name = "kasahorow Database Client"
+description = "Access and display the data in a local or remote kasahorow Database."
+dependencies[] = kdevel
+package = "kasahorow Tools"
+version = Testing
+core = 6.x

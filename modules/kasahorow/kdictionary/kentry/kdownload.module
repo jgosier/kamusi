@@ -1,0 +1,537 @@
+<?php //$Id
+/**
+ * Download the kasahorow dictionaries in various formats
+ * Planned
+ * Aspell dictionary
+ * Hunspell dictionary
+ * OmegaT glossary
+ * NARLC dictionary format
+ */
+ 
+ function kdownload_help($section) {
+    $output = '';
+    switch ($section) {
+      case "admin/modules#description":
+        $output = t('Download the kasahorow dictionaries in various formats');
+        break;
+        
+    }
+    return $output;
+  }
+  
+function kdownload_menu() {
+   $items = array();
+   $view_access = array('view downloads');
+   $hunspell_access = array('download hunspell glossary');
+   $omegat_access = array('download omegat glossary');
+   $narlc_access = array('download narlc glossary');
+   $csv_access = array('download csv glossary');  
+   $items['kdownload'] = array(
+      'page callback' => '_kdownload',
+      'access arguments' => $view_access,
+      'title' => t('Download'),
+   );
+   $items['kdownload/dictionary'] = array(
+      'page callback' => '_kdownload',
+      'access arguments' => ($view_access),
+      'title' => t('Database Downloads'),
+      'type' => MENU_DEFAULT_LOCAL_TASK,
+      'weight' => 0,
+   );
+   $items['kdownload/dictionary/csv'] = array(
+      'page callback' => '_kdownload_csv',
+      'access arguments' => ($omegat_access),
+      'title' => t('Spreadsheet Comma-Separated Values'),
+      'type' => MENU_LOCAL_TASK,
+      'weight'=>-1 						
+   );	
+   $items['kdownload/dictionary/omegat'] = array(
+      'page callback' => '_kdownload_omegat',
+      'access arguments' => ($omegat_access),
+      'title' => t('OmegaT Glossaries'),
+      'type' => MENU_LOCAL_TASK, 						
+   );   
+   $items['kdownload/dictionary/hunspell'] = array(
+      'page callback' => '_kdownload_hunspell',
+      'access arguments' => ($hunspell_access),
+      'title' => t('Hunspell Dictionaries'),
+      'type' => MENU_LOCAL_TASK, 						
+   );
+   $items['kdownload/dictionary/narlc'] = array(
+      'page callback' => '_kdownload_narlc',
+      'access arguments' => ($narlc_access),
+      'title' => t('NARLC Dictionaries'),
+      'type' => MENU_LOCAL_TASK, 						
+   );
+   $items['admin/kw/settings/kdownload'] = array(
+      'page callback' => 'drupal_get_form',
+      'page arguments' => array('_kdownload_settings'),
+      'access arguments' => ($narlc_access),
+      'title' => t('Download settings'),
+      'type' => MENU_LOCAL_TASK, 						
+   ); 					
+   return $items;
+}
+ 
+function kdownload_perm(){
+    return array( 'view downloads',
+				'download omegat glossary',
+                'download hunspell glossary',
+          //    'download narlc glossary',
+              	'download csv glossary'
+                );
+  }
+
+ 
+function kdownload_settings(){
+   $form['kdownload_folder']= array(
+    '#type'=>'textfield',
+    '#title'=>t('Download folder'),
+    '#default_value'=>variable_get('kdownload_folder',
+      variable_get('file_directory_path', 'files').'/downloads'),
+    '#description'=> t('The system path (e.g. /home/public_html/) where you want download files to be stored'),
+   );
+   return $form;
+}
+ 
+ function _kdownload($type="all"){
+ 	switch($type)
+ 	{
+ 		case "omegat":
+ 		$output .= "OmegaT";
+ 		break;
+ 		default:
+ 		$output.= t('You may download the kasahorow dictionaries into several formats. If a format is not yet supported, feel free to request it for future support on the !supportpage. <p>Note that the bigger the size of the dictionary, the longer the site will take to generate your download file.', array('!supportpage'=>l(t('kasahorow Web Toolkit Project'), 'http://drupal.org/project/kasahorow')));
+ 		break;
+ 	}
+ 	print theme('page', $output);
+ }
+ 
+//TODO: Fix for D6
+function _kdownload_omegat($lang="") {
+   return 'Coming soon for Drupal 6';
+   $q = db_query("SELECT * FROM {kdictionary} WHERE status=1");
+   
+   while($row = db_fetch_array($q)){
+      $rows[] = array(_name($row['iso']),
+	 l(t('Download'), 'kdownload/dictionary/omegat',
+	   array('query'=>'d='.$row['iso'])),
+	 l(t('Download'), 'kdownload/dictionary/omegat',
+	   array('query'=>'d='.$row['iso'].'&r=1')));
+   }
+ 	
+   $header = array(t("Dictionary"),
+      t("Translating <strong>from</strong> English"),
+      t("Translating <strong>into</strong> English"));
+   $output.= theme('table', $header, $rows);
+   if (isset($_GET['d'])){
+      $alpha_alldict = (get_magic_quotes_gpc()) ? $_GET['l'] : addslashes($_GET['l']);
+
+      $output .= "OmegaT";
+      
+      $query_alldict = sprintf("SELECT * FROM {kentry} WHERE (word LIKE '%s%%' OR word LIKE '%s%%') AND language LIKE '%s%%' ORDER BY word, priority ASC", $alpha_alldict, _upperCase($alpha_alldict), $lang);
+      $alldict = db_query($query_alldict) or die(mysql_error());
+      while($row_alldict = mysql_fetch_assoc($alldict))
+      {
+	      if($_GET['r']==1) //reverse direction
+	      {				
+		      $indexlang = preg_split("/\b[,|\/]/", $row_alldict['indexlang']);
+		      foreach($indexlang as $index)
+		      {
+			      $row.= $row_alldict['word']."\t". $index."\t".$row_alldict['partofspeech']."\r\n";
+		      }				
+	      }
+	      else
+	      {
+		      $row.= join(preg_split("/\b[,|\/]/", $row_alldict['indexlang']), "\t".$row_alldict['word']."\t".$row_alldict['partofspeech']."\r\n");
+		      $row.="\t".$row_alldict['word']."\t".$row_alldict['partofspeech']."\r\n";
+	      }
+	      
+      }
+      
+      //save it as a drupal download
+      if($_GET['r']==1) //reverse direction
+      {
+	      $fromlang = $lang;
+	      $intolang = 'en';
+	      
+      }
+      else
+      {
+	      $fromlang = 'en';
+	      $intolang = $lang;
+	      
+      }
+      $download_path = _save_download($row, 'omegat', $fromlang, $intolang);
+      //prompt to download the file
+      
+      if($download_path != "0")
+      {
+	 drupal_set_message("Download your file from $download_path");
+      }
+      else
+      {
+	      drupal_set_message("Download failed! (cf: _fetch_download returned '0')");
+      }
+      
+      $totalRows_alldict = mysql_num_rows($alldict);
+      $output.= $totalRows_alldict." "._name($lang). " entries downloaded";
+	}
+   return $output;
+ }
+ 
+/**
+ * Download in a format suitable for use in the Hunspell spellchecker
+ * Note that the affix file is simply a concept in that db named '#affix'
+ */
+function _kdownload_hunspell($lang=""){
+   foreach(_kasahorow_entry_types() as $iso=>$name) {
+      $rows[] = array($name,
+	 l(t('Download'), 'kdownload/dictionary/hunspell',
+	   array('query'=>'d='.$iso)),
+	 l(t('Download'), 'kdownload/dictionary/hunspell',
+	   array('query'=>'aff='.$iso))
+	 );
+   }
+ 	
+   $header = array(array(data=>t("Dictionary"), "colspan"=>1), t('wordlist (.dic) file'), t('affix (.aff) file'));
+   $output.= theme('table', $header, $rows);
+   if(isset($_GET['aff'])){
+      $db = trim($_GET['aff']);
+      $affix = db_fetch_object(db_query("SELECT * FROM {kentry}
+	 WHERE word LIKE '#affix' AND iso = '%s'", $db));
+      if(empty($affix->vid)){
+	 drupal_set_message("Affix definition not found in $lang. Make sure
+			    there's an entry in $lang called '#affix'");
+      }else{
+	 $download_path = _save_download($affix->defn, 'hunspell-aff', $db, 'KW');	 
+	 //prompt to download the file		
+	 if($download_path != "0") {
+	    $dl = file_create_url( $download_path);
+	    drupal_set_message(t('Download affix file from !url',
+	       array('!url'=>l($dl, $dl))));
+	 } else {
+	    drupal_set_message("Download failed! (cf: _fetch_download returned '0')");
+	 }		
+      }
+   }
+   if (isset($_GET['d'])){  
+      $lang = $_GET['d'];
+      $raw = '';
+      $alpha_alldict = (get_magic_quotes_gpc()) ? $_GET['l'] : addslashes($_GET['l']);
+
+      $output .= "Hunspell";	 	
+      $query_alldict = sprintf("SELECT * FROM {kentry} k
+	 INNER JOIN {node} n ON k.vid=n.vid
+	 WHERE title LIKE '%s%%' AND iso='%s' AND word NOT LIKE '#%%'
+	 ORDER BY word, priority ASC",
+	    $alpha_alldict, $lang);
+      $alldict = db_query($query_alldict);
+      while($row_alldict = db_fetch_array($alldict)) {
+	 if(is_numeric($row_alldict['partofspeech'])){
+	    $raw.=$row_alldict['word']."/".($row_alldict['partofspeech'])."\r\n";
+	 }else{
+	    $raw.=$row_alldict['word']."\r\n"; 
+	 }
+      }
+      //prepend number of entries in the dictionary
+      $totalRows_alldict = db_result(db_query(
+	 str_replace(" * ", " COUNT(*) ", $query_alldict)
+	 ));
+      
+      $raw = $totalRows_alldict."\r\n".$raw;
+      $download_path = _save_download($raw, 'hunspell-dic', $_GET['d'], 'KW');
+      
+      drupal_set_message(t('Downloading %num %db entries',
+	 array('%num'=>$totalRows_alldict, '%db'=>_name($lang))));
+      
+      //prompt to download the file		
+      if($download_path != "0") {
+	 $dl = file_create_url( $download_path);
+	 drupal_set_message(t('Download .dic file from !url',
+	    array('!url'=>l($dl, $dl))));
+      } else {
+	 drupal_set_message("Download failed! (cf: _fetch_download returned '0')");
+      }		
+      
+   }
+   return $output;
+ }
+
+
+function _db_count($iso){
+   return db_result(db_query("SELECT COUNT(eid) FROM {kentry}
+      WHERE `iso`='%s'", $iso));
+}
+
+/**
+ * Download as Comma Separated Values (CSV) Compatible with most SpreadSheet Programs
+ * TODO: Fix for D6
+ */
+function _kdownload_csv($lang=""){
+//  return 'Coming soon to Drupal 6';
+  $q = db_query("SELECT * FROM {kdictionary} WHERE status>0 ORDER BY iso");
+  while($row = db_fetch_array($q)) {
+    $synonyms[$row['iso']] = unserialize($row['index']); 		
+    $syns[$row['iso']] = is_array($synonyms[$row['iso']])?(array_map('_name', $synonyms[$row['iso']])):array(); 		
+    $info = array(_name($row['iso']), _db_count($row['iso']),
+                  l(t('Download'), 'kdownload/dictionary/csv',
+                    array('query' => 'd='.$row['iso'])));
+    array_push($info, join($syns[$row['iso']], ', '));
+    $rows[$row['iso']] = $info;
+  }
+ 
+  $header = array(array(data=>t("Dictionary"), "colspan"=>1), t('Size'), t('Action'), '', t('Synonyms')); 	
+  $output.=t('Assumes that the kdictionary, kentry, and ktype modules in the kasahorow toolkit are also installed'); 	
+  $output.= "<br />".t("The CSV format for each language is: Word/Phrase, Derived from, Part of Speech, Synonym1, Synonym2, ...");
+  $output.= theme('table', $header, $rows);
+
+  //Do download itself
+  if (isset($_GET['d'])) {
+    set_time_limit(0); //Unlimited time
+    $lang = $_GET['d'];
+    $fields = _kfields_list($lang);
+    $row = join("\t", array_merge(
+                        array(t('ID'),
+                              t("Word/Phrase"),
+                            t("Group"),
+                            t("Definition"),
+                            t('Example'),
+                            t('Notes')
+                            ),
+                        $fields)
+                )."\n";
+    $alpha_alldict = (get_magic_quotes_gpc()) ? $_GET['l'] : addslashes($_GET['l']);
+    $limit = $_GET['limit']>0?$_GET['limit']:10;
+    $start = $_GET['start']>0?$_GET['start']:0;
+    $output .= t('Spreadsheet Comma-Separated Values');	 	
+    $query_alldict = sprintf("SELECT vid FROM {kentry}
+                             WHERE (word LIKE '%s%%' OR word LIKE '%s%%')
+                             AND iso LIKE '%s%%'
+                             ORDER BY word, grouping, priority ASC
+                             LIMIT %d, %d",
+                             $alpha_alldict, _upperCase($alpha_alldict),
+                             $lang, $start, $limit);
+    $alldict = db_query($query_alldict) or die(mysql_error());
+    while($row_alldict = db_fetch_object($alldict)) {
+      $entry = node_load(array('vid'=>$row_alldict->vid));
+      $type = is_array($entry->ktype)?array_pop($entry->ktype):'';
+      $syn = "";
+      $children = array();
+      if(is_array($entry->chn)){
+          foreach($fields as $kfid=>$label){
+            $children[$kfid] = nl2br2($entry->chn[$kfid]->value);
+          }
+      }
+      $row.= join("\t",
+                  array_merge(
+                    array($entry->nid,
+                          $entry->title,
+                          $entry->word,
+                          nl2br2($entry->defn),
+                          nl2br2($entry->example['default']),
+                          nl2br2($entry->notes)),
+                    $children)
+                  )."\n";
+    }
+    $download_path = _save_download($row, 'csv', $_GET['d'], 'KW');
+    
+    //prompt to download the file		
+    if($download_path != "0") {
+        $dl = file_create_url( $download_path);
+        drupal_set_message(t('Download .csv file from !url',
+	    array('!url'=>l($dl, $dl))));
+    } else {
+        drupal_set_message("Download failed! (cf: _fetch_download returned '0')");
+    }		
+  }
+  return $output;	
+}
+
+/**
+ * Generate print-ready NARLC bilingual formatted  dictionaries
+ * Obsolete
+ */
+function _kdownload_narlc($lang="") { 	
+ 	$q = db_query("SELECT * FROM {kdictionary} WHERE status=1");
+ 	
+ 	$header[0] = t("Dictionary"); 	
+ 	while($row = db_fetch_array($q)){
+ 		$header[$row['iso']] = t("To")." "._name($row['iso']);
+ 		//$row_data[0][$row['iso']] = t(_name($row['iso']));
+ 		$row_data[$row['iso']]['data'] = ($row['iso']);
+ 	}
+ 	foreach($header as $iso=>$lang) {
+ 		if($iso) {
+ 			//$rows[$iso] = array($lang);
+ 		//$rows[$iso] = $row_data;//array(_name($iso), array('data'=>'aa'), array('data'=>'bb'));// l(t('Download'), 'kdownload/dictionary/narlc', NULL, 'd='.$row['iso']), l('Download', 'kdownload/dictionary/narlc', NULL, 'd='.$row['iso'].'&r=1'));
+ 		}
+ 	}
+ 	
+ 	
+ 	//$header = array("Dictionary", "Translating <strong>from</strong> English", "Translating <strong>into</strong> English");
+ 	$output.= theme('table', $header, $rows);
+	if (isset($_GET['d'])) 
+	{
+	  	$alpha_alldict = (get_magic_quotes_gpc()) ? $_GET['l'] : addslashes($_GET['l']);
+	
+	 	$output .= "NARLC";
+	 	
+	 	$query_alldict = sprintf("SELECT * FROM {kentry} WHERE (word LIKE '%s%%' OR word LIKE '%s%%') AND language LIKE '%s%%' ORDER BY word, priority ASC", $alpha_alldict, _upperCase($alpha_alldict), $lang);
+		$alldict = db_query($query_alldict) or die(mysql_error());
+		
+		while($row_alldict = mysql_fetch_assoc($alldict)) {
+			if($_GET['r']==1) { //reverse direction							
+				$indexlang = preg_split("/\b[,|\/]/", $row_alldict['indexlang']);
+				foreach($indexlang as $index){
+					$row.= '<b>'.$row_alldict['word'].'</b>'."\t".'<i>'.$row_alldict['partofspeech'].'</i>'."\t".$index."\t". '<b>'.str_replace($row_alldict['word'], '~', $row_alldict['example']).'</b>'.";\t"."<br />\r\n";
+				}				
+			} else {
+				$row.= join(preg_split("/\b[,|\/]/", $row_alldict['indexlang']), "\t".$row_alldict['word']."\t".$row_alldict['partofspeech']."\r\n");
+				$row.="\t".$row_alldict['word']."\t".$row_alldict['partofspeech']."<br />\r\n";
+			}
+			
+		}
+		
+		//save it as a drupal download
+		if($_GET['r']==1) //reverse direction
+		{
+			$fromlang = $lang;
+			$intolang = 'en';
+			
+		}
+		else
+		{
+			$fromlang = 'en';
+			$intolang = $lang;
+			
+		}
+		$download_path = _save_download($row, 'narlc', $fromlang, $intolang);
+		//prompt to download the file
+		
+		if($download_path != "0")
+		{
+			_fetch_download($download_path);
+		}
+		else
+		{
+			drupal_set_message("Download failed! (cf: _fetch_download returned '0')");
+		}
+		
+		$totalRows_alldict = mysql_num_rows($alldict);
+	 	$output.= $totalRows_alldict." "._name($lang). " entries downloaded";
+	}
+ 	print theme('page', $output);
+ }
+
+function _upperCase($letter){
+   switch($letter){
+      case "ɛ":
+	 $l = "Ɛ";
+	 break;
+      case "ɔ":
+	 $l = "Ɔ";
+	 break;
+      default:
+	 $l = strtoupper($letter);
+	 break;
+   }
+   return $l; 
+}
+
+/*
+ * save a string as a drupal file upload
+ */
+function _save_download($row, $type, $fromlang, $intolang){
+   global $user;	
+   $dest = variable_get('kdownload_folder',
+      variable_get('file_directory_path', 'files').'/downloads'); //no trailing slash
+   switch($type) {
+      case 'hunspell-dic':
+	 $filename = $user->uid.'_'.$fromlang.'-'.$intolang.'.dic';
+	 break;
+      case 'hunspell-aff':
+	 $filename = $user->uid.'_'.$fromlang.'-'.$intolang.'.aff';
+	 break;
+	case 'narlc':
+	$filename = $type.'_'.$user->uid.'_'.$fromlang.'_'.$intolang.'.htm';
+	break;
+	case 'csv':
+	$filename = $type.'_'.$user->uid.'_'.$fromlang.'_'.$intolang.'.csv';
+	break;
+	default: //omegat
+	$filename = $type.'_'.$user->uid.'_'.$fromlang.'_'.$intolang.'.utf8';
+	break;
+   }
+	
+	
+   if(file_check_directory($dest, 1)){//create directory if it doesn't exist
+      $file = file_save_data(($row), $dest.'/'.$filename);
+      //never overwrites files 
+      //but appends a number to the filename.
+      //This number+1 tells how many times the 
+      //file has been generated (and thus downloaded)
+      return $file;
+   }
+   else
+	   return 0;
+   
+}
+
+
+/*
+ * hook_file_download
+ */
+function kdownload_file_download($filepath) {
+   if (user_access('download hunspell glossary')) {
+      $file = file_create_path($filepath);
+      $name = basename($filepath);
+      $name = substr($name, strlen($dest)+1);
+      $disposition = 'attachment';
+      return array('Content-Type: text/text; charset=utf-8',
+		   'Content-Length: '. filesize($file),
+		   'Content-Disposition: '. $disposition .'; filename='. $name);
+   }else{
+      drupal_set_message("You do not have sufficient privileges to download glossaries. If you believe this is an error, contact the administrator at downloads@kasahorow.com");
+      return -1;
+   }
+}
+
+
+/**
+ * Implementation of kasahorow api
+ */
+function kdownload_kwapi(&$kasa, $op, $a3 = NULL, $a4 = NULL){
+   switch($op){
+      case 'admin':
+      $output = array(array(
+	  t('Downloads'),
+	 kdownload_help('admin/modules#description'),
+	 l(t('Settings'), 'admin/kw/settings/kdownload')
+	 ));
+      break;	
+   }
+   return $output;
+}
+
+function _kdownload_settings(){
+   $form = kdownload_settings();
+   return system_settings_form($form);
+}
+
+function _kfields_list($db) {
+  $rows = array();
+  $q = db_query("SELECT * FROM {kentry_fields} WHERE iso='%s'", $db);
+  while($r = db_fetch_object($q)) {
+    $rows[$r->kfid] = $r->label;
+  }
+  return $rows;
+}
+
+/**
+ *http://uk3.php.net/manual/en/function.nl2br.php#73440
+ */
+function nl2br2($string) { 
+  $string = str_replace(array("\r\n", "\r", "\n"), "<br />", $string); 
+  return $string; 
+} 

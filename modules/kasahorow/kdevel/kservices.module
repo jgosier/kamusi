@@ -1,0 +1,422 @@
+<?
+/**
+ * @file
+ * Web services for kasahorow Tools
+ */
+
+function kservices_menu(){
+  $items = array();
+  $items['kjson'] = array(
+    'type' => MENU_CALLBACK,
+    'page callback' => '_kservices_json',
+    'file' => 'kservices.json.inc',
+    'access arguments' => array('access content')
+  );
+  return $items;
+}
+
+/**
+ * Implement hook_xmlrpc()
+ */
+function kservices_xmlrpc(){
+    return array(
+        array('get.dbs',
+              '_get_databases',
+              array('struct', 'struct'),
+              t('Get the list of all databases on this server.
+                Call as get.dbs(struct options). Options must include key-value
+                pairs with the following mandatory key-values
+                    [key] = developer-key
+                and the following optional key-values
+                    [lang] = ISO 2 letter code of language
+                Returns a struct of database short codes and their full
+                names')),
+        array('get.node',
+              '_get_node',
+              array('struct', 'struct', 'int'),
+              t('Get a node by nid. Call as get.node(struct options).
+                Options must include key-value
+                pairs with the following mandatory key-values
+                    [key] = developer-key
+                and the following optional key-values
+                    [lang] = ISO 2 letter code of language')),
+        array('save.node',
+              '_save_node',
+              array('struct', 'struct', 'struct'),
+              t('Save a node.
+                Call as save.node(struct options). Options must include
+                key-value
+                pairs with the following mandatory key-values
+                    [key] = developer-key
+                and the following optional key-values
+                    [lang] = ISO 2 letter code of language')),
+        array('get.db.pairs',
+              '_get_database_pairs',
+              array('struct', 'struct'),
+              t('Get the list of all database pairs on this server.
+                Call as get.db.pairs(struct options). Options must include
+                key-value
+                pairs with the following mandatory key-values
+                    [key] = developer-key
+                and the following optional key-values
+                    [lang] = ISO 2 letter code of language
+                Returns an array of database pair short codes and their
+                full names')), 
+        array('x.most.recent',
+              'x_most_recent_entries',
+              array('struct', 'struct', 'int', 'string'),
+              t('Get the x most recent entries in a database.
+                Call as x.most.recent(struct options, int limit,
+                string database-short-code). Options must include key-value
+                pairs with the following mandatory key-values
+                    [key] = developer-key
+                and the following optional key-values
+                    [lang] = ISO 2 letter code of language')),
+        array('x.most.recent.by',
+              'x_most_recent_entries',
+              array('struct', 'struct', 'int', 'string', 'string'),
+              t('Call as x.most.recent.by(struct options, int limit,
+                string database-short-code, string author-name).
+                Options must include key-value
+                pairs with the following mandatory key-values
+                    [key] = developer-key
+                and the following optional key-values
+                    [lang] = ISO 2 letter code of language')),
+        array('x.entries.since',
+              'x_entries_since',
+              array('struct', 'struct', 'int', 'string', 'int'),
+              t('Get x entries in a database since a Unix timestamp.
+                Call as x.entries.since(struct options, int limit,
+                string database-short-code, int since-timestamp).
+                Options must include key-value
+                pairs with the following mandatory key-values
+                    [key] = developer-key
+                and the following optional key-values
+                    [lang] = ISO 2 letter code of language')),
+        array('get.most.relevant',
+              '_get_ksearch_results',
+              array('struct', 'struct', 'string'),
+              t('Get the x most relevant node search results for the input
+                query. Call as get.most.relevant(string developer-key,
+                string search-term). Options must include key-value
+                pairs with the following mandatory key-values
+                    [key] = developer-key
+                and the following optional key-values
+                    [lang] = ISO 2 letter code of language')),
+        array('get.most.relevant.fi',
+              '_get_ksearch_results',
+              array('struct', 'struct', 'string', 'string'),
+              t('Get the x most relevant node search results in specified
+                database for the input query.
+                Call as get.most.relevant.fi(string developer-key,
+                string search-term, string target-database)
+                Options must include key-value
+                pairs with the following mandatory key-values
+                    [key] = developer-key
+                and the following optional key-values
+                    [lang] = ISO 2 letter code of language')),
+        array('get.links',
+              '_get_klinks',
+              array('struct', 'struct', 'string', 'string', 'string'),
+              t('Translate input query from one database to another.
+                Call as get.links(struct options,
+                string search-term, string search-term-database,
+                string target-database).
+                Options must include key-value
+                pairs with the following mandatory key-values
+                    [key] = developer-key
+                and the following optional key-values
+                    [lang] = ISO 2 letter code of language
+                    [limit] = Number of results to fetch. ')),
+        array('save.links',
+              '_save_klinks',
+              array('boolean', 'struct', 'string', 'string', 'string'),
+              t('Options must include key-value
+                pairs with the following mandatory key-values
+                    [key] = developer-key
+                and the following optional key-values
+                    [lang] = ISO 2 letter code of language')),
+        array('scan.entries',
+              '_scan_entries',
+              array('struct', 'struct', 'string', 'string'),
+              t('Scan database by title.
+                Call as scan.entries(string developer-key,
+                string search-term, string search-term-database).
+                Options must include key-value
+                pairs with the following mandatory key-values
+                    [key] = developer-key
+                and the following optional key-values
+                    [lang] = ISO 2 letter code of language')),
+        'kentry.sync' => '_kservices_kentry_sync',
+        );
+}
+
+
+/**
+ * Return node array
+ */
+function x_most_recent_entries($options, $limit, $db=NULL, $username=''){
+    if(_valid_key($options['key'])){
+        $rows = array();
+        $restrict = "";
+        $db = check_plain($db);
+        $limit = check_plain($limit);        
+        $limit = ($limit > variable_get('kdevel_entries_limit', 10))?
+            variable_get('kdevel_entries_limit', 10):$limit;
+        if($username!=''){
+            $uid = db_result(db_query("SELECT uid FROM {users}
+                                      WHERE name LIKE '%s'", $username));
+            $restrict = sprintf(" AND uid=%d ", $uid);
+        }
+        $q = db_query("SELECT nid FROM {node} n
+                      WHERE status=1 AND `type`='%s' %s
+                      ORDER BY changed DESC LIMIT %d", "kentry_$db",
+                      $restrict, $limit);
+        while($r = db_fetch_object($q)){
+            $rows[$r->nid] = _sanitize_node(node_load($r->nid));
+        }
+        watchdog('kdevel', "%count results returned for
+                 x_most_recent_entries(%limit, %db, %user)",
+                 array('%count'=>count($rows), '%limit'=>$limit,
+                       '%db'=>$db, '%user'=>$username));
+        return $rows;
+    }else{
+        return array(t('Access denied'));
+    }
+}
+
+/**
+ * Given a query, search the node tables for the best match.
+ * Same results as from /search/node/$options['key']
+ */
+function _get_ksearch_results($options, $query, $type='node'){
+    watchdog('kservices', "$options[key], $query: search,
+             $options[limit] requested");
+    if(_valid_key($options['key'])){
+        $function = $type."_search";
+        if(function_exists($function)){
+            if($type=='kclient'){
+                #set the GET parameter with our option
+                $_GET['page'] = $options['page']; 
+                $results = (array)$function('search', $query,
+                                            $options['limit']);
+            }else{
+                $results = (array)$function('search', $query);
+            }
+            foreach($results as $options['key']=>$value){
+              $value['url'] = $value['domain'].'?q=node/'.$value['node']->nid;
+              $value['link'] = $value['url'];
+              $value['node'] = _sanitize_node($value['node']);
+              $results[$options['key']] = _sanitize_result($value);
+            }
+            watchdog('kservices',
+                     "$function $type $options[key], $query: ".count($results)." results");
+            return $results;
+        }else{
+            return array($type.' Search unavailable');
+        }
+        //return search_data($query, $type);
+        //search_data is defined in core search module
+    }else{
+        return array(t('Access denied'));
+    }
+}
+
+/**
+ * Given a query, search the kentry_synonyms table for possible links
+ */
+function _get_klinks($options, $query, $from, $to){
+    global $base_url, $pager_page_array, $pager_total, $pager_total_items;
+    watchdog('kservices', 'get.links: query %query from %from to %to by %key',
+        array('%query'=>$query, '%key'=>$options['key'],
+              '%from'=>$from, '%to'=>$to));
+    return array('results'=>_get_ksearch_results($options,
+                                "$query link:$from|$to", 'kclient'),
+                 'paging'=>array('total'=>$pager_total,
+                                'array'=>$pager_page_array,
+                                'items'=>$pager_total_items
+                                ),
+                );
+}
+
+function _get_databases($options){
+    if(_valid_key($options['key'])){
+        return _kasahorow_entry_types();
+    }else{
+        return array('Access denied');
+    }
+}
+
+function _get_node($options, $nid){    
+    watchdog("kservices", "get.node: $options[key] , $nid"); 
+    if(_valid_key($options['key'])){
+        $node = _sanitize_node(node_load($nid));
+        $node = (array)$node;
+        return count($node)?$node:array('title'=>t('Not found',
+                                                   array(), $options['lang']));
+    }else{
+        return array('title'=>t('Access denied', array(), $options['lang']));
+    }                  
+}
+
+
+/**
+ * Implemenation of kasahorow api
+ */
+function kservices_kwapi(&$kasa, $op, $a3 = NULL, $a4 = NULL){
+	$output = '';
+	switch($op){
+		case 'admin':
+		$output = array(array(t('Web services'),
+                    'For developer clients. Note that the server must grant'.
+                    ' "search kasahorow" permissions (kclient.module) to '.
+                    ' anonymous users for searches to return results.',
+                    'Settings'));
+		break;
+	}
+	return $output;
+}
+
+/**
+ *Remove sensitive information loaded into the node structure
+ */
+function _sanitize_node($node){
+  $terms = array();
+  $links = array();
+  $node->pos = @$node->taxonomy[$node->partofspeech]->name;
+  if(is_array($node->relations)) {
+    $node->relations = _kentry_load_relations($node, 0);
+    foreach($node->relations as $type => $rel) {
+      foreach($rel as $vid => $link) {
+      $links[$link['iso']][] =
+          array('title' => $link['title'], 'nid' => $link['nid'],
+                'root' => $link['word'], 'type' => $link['iso']);
+      }
+    }
+  }
+
+  if(is_array($node->taxonomy)) {
+    foreach($node->taxonomy as $term) {
+      $terms[] = $term->name;
+    }
+  }
+
+  foreach($node as $key => $val) {
+    if (!in_array($key, 
+         variable_get('kservices_node_keys',
+                 array('nid', 'title', 'defn', 'thumbnail', 'word', 'pos', 
+                       'grouping', 'priority','teaser', 'iso', 'body')))) {
+      unset($node->$key);
+    }
+  }
+    
+  if(count($node->files)){
+      foreach($node->files as $fid=>$file){
+          $file->filepath = file_create_url($file->filepath);
+          $node->files[$fid] = $file;
+      }
+  }
+  $node->links = $links;
+  $node->terms = $terms;
+  return $node;
+}
+
+function _sanitize_result($result) {
+  foreach($result as $key => $value )
+    if (!in_array($key,variable_get('kservices_result_keys',
+                           array('type', 'url', 'node', 'snippet')))) {
+      unset($result[$key]);
+    }
+  return $result;
+}
+
+function _get_database_pairs($options){
+    if(_valid_key($options['key'])){
+        return _kw_db_pairs($options['lang']);
+    }else{
+    }
+}
+
+function _scan_entries($options, $title, $db='%'){
+    if(_valid_key($options['key'])){
+        $node = new StdClass();
+        $node->title = $title;
+        $node->iso = $db;
+        return _knode_dups($node, 1);
+    }else{
+        drupal_access_denied();
+    }
+}
+
+function _save_node($options, $edit){
+    if(_valid_key($options['key']) && ($options['key'] ==
+        variable_get('kservices_writekey', 401082052))){
+        //Only allow this key to write
+        $tosave = (object)$edit;
+        node_save($tosave);
+        return $tosave->nid;
+    }else{
+        return '#'; //Must be a string 
+    }
+}
+
+function _save_klinks($options, $vid, $svid, $relid, $group=0, $priority=0){
+    if(_valid_key($options['key']) && ($options['key'] ==
+        variable_get('kservices_writekey', 401082052))){
+        //Only allow this key to write
+        $status = db_query("INSERT IGNORE {kentry_synonyms}(vid, svid,
+                           relid, grouping, priority)
+                           VALUES (%d, %d, '%s', %d, %d);\n",
+                           $vid, $svid, $relid, $group, $priority);        
+        return $status;
+    }else{
+        return false; //Must be a boolean 
+    }
+}
+
+function x_entries_since($options, $limit, $db, $timestamp){
+    if(_valid_key($options['key'], 'administer nodes')){
+        $rows = array();
+        $restrict = "";
+        $db = check_plain($db);
+        $limit = check_plain($limit);        
+        $limit = ($limit > variable_get('kdevel_entries_limit', 10))
+                        ?variable_get('kdevel_entries_limit', 10):$limit;
+        $restrict = sprintf(" AND changed >= %d ", $timestamp);
+        $q = db_query("SELECT nid FROM {node} n
+                      WHERE status=1 AND `type`='%s' %s
+                      ORDER BY changed DESC LIMIT %d", "kentry_$db",
+                      $restrict, $limit);
+        while($r = db_fetch_object($q)){
+            $rows[$r->nid] = _sanitize_node(node_load($r->nid));
+        }
+        watchdog('kdevel', "%count results :
+                 x.entries.since(%limit, %db, %timestamp)",
+                 array('%count'=>count($rows), '%limit'=>$limit, '%db'=>$db,
+                       '%timestamp'=>format_date($timestamp)));
+        return $rows;        
+    }else{
+        drupal_access_denied();
+    }
+}
+
+function _kservices_kentry_sync($options, $limit=10) {
+  if(_valid_key($options['key'], 'administer nodes') &&
+     in_array($options['key'], _kservices_allowed_sync_keys())) {
+    $nodes = array();
+    $nodes_to_sync = _kentry_sync($options['key'], $limit);
+    foreach($nodes_to_sync as $node) {
+      $nodes[] = _sanitize_node($node);
+    }
+    return $nodes;
+  }else {
+    return False;
+  }
+}
+
+function _kservices_allowed_sync_keys() {
+  $allowed = array();
+  $keys = variable_get('kservices_sync_keys', '');
+  $allowed = array_map('trim', explode("\n", $keys));
+  return $allowed;
+}

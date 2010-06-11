@@ -1,0 +1,54 @@
+body{margin:0;top:0px; width:200px; text-align:center;}
+#edit-keys{float:left; margin-top:3px;}
+.help{font-size:12px; text-align:center;}
+.surrounder{padding:0px;margin:0px;margin-top:1px;}
+
+
+#word {width:200px;background-color:#FFFFFF;color:#422C1A;}
+#fromto {width:200px;margin-left:2px;color:#422C1A;}
+#outdiv {text-align:center;}
+#results {color:#422C1A;overflow:auto; height:150px;}
+#link {visibility:hidden;color:#A50000;}
+.wentry{border-top:1px dashed gray; }
+#spaceused { font-size:0.8em; font-family:georgia; }
+
+
+#options legend {
+font-family:georgia;
+font-weight:bold;
+}
+
+#options fieldset {
+width:410px;
+}
+
+label {
+margin-right:4px;
+font-size:0.8em;
+}
+#width {
+width:40px;
+}
+
+#height {
+width:40px;
+}
+
+#backgroundimage {
+visibility:visible;
+}
+
+#backgroundcolor {
+visibility:hidden;
+}
+
+
+.inbox {
+width:80px;
+}
+
+.container {
+float:left;
+width:450px;
+}
+

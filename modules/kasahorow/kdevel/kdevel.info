@@ -1,0 +1,6 @@
+;$id $
+name = kasahorow Developer Tools
+description = Tools for kasahorow developers
+package = kasahorow Tools
+version = Unstable
+core = 6.x

@@ -1,0 +1,6 @@
+name=AJAX support
+description= Provide Javascript dependent enhancements for the various tools
+core = 6.x
+package = kasahorow Tools
+version = Unstable
+

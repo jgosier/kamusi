@@ -1,0 +1,8 @@
+core = 6.x
+name = 'kasahorow Web Services'
+description = 'Provides a set of XML-RPC interfaces to the existing kasahorow modules. Useful for syndicating content published with the kasahorow Database Publisher across the Web'
+package = 'kasahorow Tools'
+dependencies[] = search
+dependencies[] = kasahorow
+dependencies[] = kdevel
+version=Ready

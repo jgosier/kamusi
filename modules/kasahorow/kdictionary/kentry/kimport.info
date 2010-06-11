@@ -1,0 +1,8 @@
+;$id $
+name = "kasahorow Database Entry Import"
+description = "Allows a sufficiently permissioned user to import entries to kasahorow databases"
+package = "kasahorow Tools"
+dependencies[] = kdictionary
+dependencies[] = kentry
+version = Testing
+core = 6.x

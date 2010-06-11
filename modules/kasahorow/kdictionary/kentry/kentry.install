@@ -1,0 +1,154 @@
+<?php
+
+/**
+ *@ingroup hook_install()
+ */
+function kentry_install() {
+  $status = drupal_install_schema('kentry');
+  if(!$status['success']) {
+    drupal_set_message(t('Content publisher failed to install. '.
+                         'Check logs for details'), 'error');
+  }
+}
+
+function kentry_schema() {
+  $schema['kdictionary'] = array(
+  'fields' => array(
+       'iso' => array('type' => 'varchar', 'length' => '10', 'not null' => TRUE),
+       'name' => array('type' => 'varchar', 'length' => '255', 'not null' => TRUE, 'default' => ''),
+       'labels' => array('type' => 'text', 'not null' => TRUE),
+       'instruction' => array('type' => 'text', 'size' => 'big', 'not null' => TRUE),
+       'index' => array('type' => 'varchar', 'length' => '255', 'not null' => TRUE, 'default' => ''),
+       'children' => array('type' => 'text', 'size' => 'big', 'not null' => TRUE),
+       'alphabets' => array('type' => 'text', 'size' => 'big', 'not null' => TRUE),
+       'status' => array('type' => 'int', 'size' => 'tiny', 'not null' => TRUE, 'default' => 0, 'disp-width' => '2'),
+       'vid' => array('type' => 'int', 'not null' => FALSE, 'disp-width' => '10'),
+       'editor' => array('type' => 'text', 'size' => 'big', 'not null' => TRUE),
+       'created' => array('type' => 'int', 'not null' => TRUE, 'disp-width' => '10')),
+      'primary key' => array('iso'),
+  );
+
+   $schema['kentry'] = array(
+    'fields' => array(
+         'eid' => array('type' => 'serial', 'not null' => TRUE, 'disp-width' => '20'),
+         'vid' => array('type' => 'int', 'not null' => TRUE, 'default' => 0, 'disp-width' => '20'),
+         'word' => array('type' => 'text', 'size' => 'big', 'not null' => TRUE),
+         'priority' => array('type' => 'int', 'not null' => TRUE, 'default' => 0, 'disp-width' => '4'),
+         'grouping' => array('type' => 'int', 'not null' => TRUE, 'default' => 0, 'disp-width' => '4'),
+         'partofspeech' => array('type' => 'varchar', 'length' => '20', 'not null' => TRUE, 'default' => ''),
+         'defn' => array('type' => 'text', 'not null' => TRUE),
+         'children' => array('type' => 'text', 'not null' => TRUE),
+         'index' => array('type' => 'text', 'size' => 'big', 'not null' => TRUE),
+         'approved' => array('type' => 'int', 'size' => 'tiny', 'not null' => TRUE, 'default' => 0, 'disp-width' => '1'),
+         'submittedby' => array('type' => 'varchar', 'length' => '255', 'not null' => TRUE, 'default' => 'anonymous'),
+         'example' => array('type' => 'text', 'not null' => TRUE),
+         'notes' => array('type' => 'text', 'not null' => TRUE),
+         'iso' => array('type' => 'varchar', 'length' => '10', 'not null' => TRUE),
+         'updated' => array('type' => 'int', 'not null' => TRUE, 'default' => 0, 'disp-width'=>'10'),
+         'altmisspells' => array('type' => 'text', 'size' => 'big', 'not null' => TRUE)),
+        'primary key' => array('eid'),
+        'indexes' => array(
+             'iso' => array('iso'),
+             'vid' => array('vid')),
+    );
+    
+    $schema['kentry_synonyms'] = array(
+    'fields' => array(
+      'uid' => array('type' => 'int', 'unsigned' => TRUE, 'not null' => TRUE, 'default' => 0, 'disp-width' => '11'),
+      'updated' => array('type' => 'int', 'unsigned' => TRUE, 'not null' => TRUE, 'default' => 0, 'disp-width' => '11'),
+      'vid' => array('type' => 'int', 'unsigned' => TRUE, 'not null' => TRUE, 'default' => 0, 'disp-width' => '11'),
+      'svid' => array('type' => 'int', 'unsigned' => TRUE, 'not null' => TRUE, 'default' => 0, 'disp-width' => '11'),
+      'priority' => array('type' => 'int', 'not null' => TRUE, 'default' => 0, 'disp-width' => '11'),
+      'grouping' => array('type' => 'int', 'not null' => TRUE, 'default' => 0, 'disp-width' => '11'),
+      'iso' => array('type' => 'varchar', 'length' => '10', 'not null' => TRUE),
+         'relid' => array('type' => 'varchar', 'length' => '10', 'not null' => TRUE)),
+      'primary key' => array('vid', 'svid'),
+      'indexes' => array(
+             'iso' => array('iso'),
+             'uid' => array('uid'),
+             'relid' => array('relid'),
+             'snid' => array('svid')),
+    );
+    
+    $schema['ksynset_relations'] = array(
+    'fields' => array(
+         'relid' => array('type' => 'int', 'not null' => TRUE, 'default' => 0, 'disp-width' => '10'),
+         'relation' => array('type' => 'varchar', 'length' => '255', 'not null' => FALSE),
+         'derivation' => array('type' => 'text', 'size' => 'small', 'not null' => TRUE)),
+            'primary key' => array('relid'),
+        );
+    $schema['kentry_fields'] = array(
+    'fields' => array(
+         'kfid' => array('type' => 'serial', 'not null' => TRUE, 'disp-width' => '11'),
+         'label' => array('type' => 'varchar', 'length' => '255', 'not null' => FALSE),
+         'name' => array('type' => 'varchar', 'length' => '128', 'not null' => TRUE, 'default' => ''),
+         'explanation' => array('type' => 'text', 'not null' => FALSE),
+         'iso' => array('type' => 'varchar', 'length' => '10', 'not null' => FALSE),
+         'link' => array('type' => 'varchar', 'length' => '10', 'not null' => FALSE),
+         'category' => array('type' => 'varchar', 'length' => '255', 'not null' => FALSE),
+    	 'ffilter' => array('type' => 'varchar', 'length' => '32', 'not null' => FALSE),
+         'ftype' => array('type' => 'varchar', 'length' => '128', 'not null' => FALSE),
+         'weight' => array('type' => 'int', 'size' => 'tiny', 'not null' => TRUE, 'default' => 0, 'disp-width' => '4'),
+         'required' => array('type' => 'int', 'size' => 'tiny', 'not null' => TRUE, 'default' => 0, 'disp-width' => '4'),
+         'kteaser' => array('type' => 'int', 'size' => 'tiny', 'not null' => TRUE, 'default' => 0, 'disp-width' => '4'),
+         'autocomplete' => array('type' => 'int', 'size' => 'tiny', 'not null' => TRUE, 'default' => 0, 'disp-width' => '4'),
+         'options' => array('type' => 'text', 'not null' => FALSE)),
+        'primary key' => array('kfid'),
+        'unique keys' => array(
+             'name' => array('name', 'iso')),
+        'indexes' => array(
+             'iso' => array('iso')),
+    );
+    
+    $schema['kentry_values'] = array(
+    'fields' => array(
+         'kfid' => array('type' => 'int', 'unsigned' => TRUE, 'not null' => TRUE, 'default' => 0, 'disp-width' => '10'),
+         'vid' => array('type' => 'int', 'unsigned' => TRUE, 'not null' => TRUE, 'default' => 0, 'disp-width' => '10'),
+         'value' => array('type' => 'text', 'not null' => FALSE)),
+        'primary key' => array('vid', 'kfid'),
+        'indexes' => array(
+             'kfid' => array('kfid'),
+             ),
+    );
+
+
+    return $schema;
+}
+
+function kentry_update_1(){
+    if(!db_column_exists('kentry_synonyms', 'grouping')){
+        db_query("alter table {kentry_synonyms} add column grouping int(4)");
+    }
+    if(!db_column_exists('kentry_synonyms', 'priority')){
+        db_query("alter table {kentry_synonyms} add column priority int(4)");
+    }
+    return array();
+}
+
+function kentry_update_2(){
+    if(!db_table_exists('kentry_values')){
+        db_query("CREATE TABLE `kentry_values` (
+            `kfid` int(10) unsigned NOT NULL default '0',
+            `vid` int(10) unsigned NOT NULL default '0',
+            `value` text,
+            PRIMARY KEY  (`vid`,`kfid`),
+            KEY `kfid` (`kfid`)            
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8");
+    }
+}
+
+function kentry_update_3(){
+    return array(
+    update_sql("alter table {kentry_fields} add index (category);")
+    );
+}
+
+function kentry_update_4(){
+    return array(update_sql("alter table {kentry}
+        add index ( word (5))"));
+}
+
+function kentry_update_5(){
+    return array(update_sql("alter table {kentry_fields}
+        add column ffilter varchar(32)"));
+}

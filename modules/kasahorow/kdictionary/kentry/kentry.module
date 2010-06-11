@@ -1,0 +1,2941 @@
+<?php
+/**
+ * @file
+ * Create new nodes using user-specified templates.
+ */
+
+define('FEATURED_DATABASE', 2);
+define('KDECODER_DICT', '2345679abcdefghjkmnpqrstuvwxyz');
+define('KENCODER_BASE',strlen(KDECODER_DICT));
+define('KENCODER_DICT', substr('0123456789abcdefghijklmnopqrstuvwxyz', 0,
+                               KDECODER_DICT));
+/**Start: Drupal core hooks--the function names that start with 'kentry_'**/
+
+/**
+ * @ingroup hook_help
+ */
+function kentry_help($path, $args=NULL) {
+  $output = '';
+  switch( $path ) {
+    case 'admin/modules#description':
+      $output =  t('Define node templates and publish content.');
+    break;
+  }
+  return $output;
+}
+   
+/**
+ * @ingroup hook_perm 
+ */
+function kentry_perm() {
+  $perms = array('administer dictionary',
+     'add dictionary','administer editors',
+     'use dictionary', 'edit dictionary',
+     'view entry', 'suggest entry', 
+     'review entry','create relations');
+  foreach(kentry_node_info() as $type=>$name){
+     $perms[] = "suggest $type entry only";
+    }
+  return $perms;
+}
+
+/**
+ * @ingroup hook_menu 
+ */
+function kentry_menu(){
+  $items['play'] = array(//Fun and games
+      'type' => MENU_DEFAULT_LOCAL_TASK,
+      'page callback' => '_kplay',
+      'file' => 'play.inc',
+      'title' => 'Play',
+      'access arguments' => array('use dictionary'),
+  );
+  $items['play/crossword'] = array(
+     'title' => t('Crossword'),
+     'page callback' => '_generate_crossword',
+     'file' => 'play.inc',
+     'page arguments'=>array(1,2,3),
+     'access arguments' => array('use dictionary'),
+     'type' => MENU_LOCAL_TASK,
+   );
+  $items['find'] = array(
+     'title' => t('Find'),
+     'page callback' => '_kentry_finder',
+     'file' => 'finder.inc',
+     'page arguments'=>array(1,2,3),
+     'access arguments' => array('use dictionary'),
+     'type' => MENU_CALLBACK,
+  );
+  $items['all'] = array(//TODO:deprecate this after checking from logs that it's no longer used
+     'title' => t('Browse'),
+     'page callback' => '_available_dicts',
+     'page arguments'=>array(1,2,3),
+     'access arguments' => array('use dictionary'),
+     'type' => MENU_CALLBACK,
+   );
+   $items['browse'] = $items['all'];
+   $items['browse']['type'] = MENU_NORMAL_ITEM;
+   
+   $items['admin/content/kw/kentry'] = array(
+     'title' => t('Content Publisher'),
+     'description' => kentry_help('admin/modules#description'),
+     'page callback' => '_check_stats',
+   	 'file' => 'kentry.admin.inc',
+     'access arguments' => array('administer dictionary')
+        );
+   $items['admin/content/kw/kentry/view'] = array(
+     'title' => t('Content Publisher'),
+     'page callback' => '_check_stats',
+     'file' => 'kentry.admin.inc',
+     'access arguments' => array('administer dictionary'),
+     'type' => MENU_CALLBACK
+         );
+   $items['admin/content/kw/kentry/edit'] = array(
+     'title' => t('Edit'),
+     'page callback' => 'drupal_get_form',
+     'file' => 'kentry.admin.inc',
+     'page arguments' => array('_add_edit_dict', 5),
+     'access arguments' => array('edit dictionary'),
+     'type' => MENU_CALLBACK,
+         );
+   $items['admin/content/kw/kentry/add'] = array(
+         'title' => t('Add New Entry Type'),
+         'page callback' => 'drupal_get_form',
+         'file' => 'kentry.admin.inc',
+         'page arguments' => array( '_add_edit_dict'),
+         'access arguments' => array('administer dictionary'),
+         'type' => MENU_CALLBACK,
+         'weight' => 2
+       );
+    $items['admin/content/kw/kentry/props'] = array(
+       'title' => t('Properties'),
+       'file' => 'kentry.admin.inc',
+       'page callback' => '_view_props',
+       'access arguments'=>array('administer dictionary'),
+       'type' => MENU_CALLBACK,
+       'weight' => -1
+    );
+    $items['admin/content/kw/settings/kentry'] = array(
+       'title' => t( 'Entries settings' ),
+       'file' => 'kentry.admin.inc',
+       'page callback'=> 'drupal_get_form',
+       'page arguments' => array('kentry_admin_settings'),
+       'access arguments' => array('administer dictionary'),
+       'type' => MENU_LOCAL_TASK,
+    );
+   $items['kentry/synonyms'] = array(
+        'title' => t('Autocomplete synonyms'),
+        'page callback'=> '_suggest_synonyms',
+        'page arguments' => array(2,3,4),
+        'access callback' => 'user_access',
+        'access arguments' => array('review entry'),
+        'type' => MENU_CALLBACK,
+    );
+    $items['kentry/check'] = array(
+        'title' => t('Autocomplete synonyms'),
+        'page callback'=> '_check_entries',
+        'page arguments' => array(2,3),
+        'access callback' => 'user_access',
+        'access arguments' => array('review entry'),
+        'type' => MENU_CALLBACK,
+    );
+    $items['node/%node/index'] = array(
+         'title' => t('Index'),
+         'page callback' => '_kentry_to_appengine',
+         'page arguments' => array(1),
+         'access callback' => 'user_access',
+         'access arguments' => array('create relations'),
+         'type'=>MENU_LOCAL_TASK,
+      );
+    $items['node/%node/relations'] = array(
+         'title' => t('Link'),
+         'page callback' => 'drupal_get_form',
+         'page arguments' => array('_add_relations', 1),
+         'file' => 'kentry.admin.inc',
+         'access callback' => 'user_access',
+         'access arguments' => array('create relations'),
+         'type'=>MENU_LOCAL_TASK,
+      );
+    
+   $items['node/%node/notes'] = array(
+              'page arguments' => array(1),
+              'title' => t('Highlights'),
+              'page callback' => '_gallery_of_notes',
+              'access callback' => 'user_access',
+              'access arguments' => array('view entry'),
+              'type' => MENU_CALLBACK,
+          );
+  $items['kfield_upload/js'] = array(
+    'type' => MENU_CALLBACK,
+    'page callback' => '_kfield_upload_js',
+    'file' => 'kentry.admin.inc',
+    'access arguments' => array('upload files'),
+  );
+  return $items;
+}
+
+/**
+ * @ingroup hook_node_info.
+ */
+function kentry_node_info() {
+  $entry_types = array();
+  $q = db_query("SELECT `iso`, `name` FROM {kdictionary} WHERE `status`>0");
+  while($row = db_fetch_object($q)){
+      $entry_types["kentry_".$row->iso] = array(
+          'name'=>t('!type', array('!type'=>$row->name)),
+          'module'=>'kentry',
+          'description' => t('Add new !type content',
+              array('!type'=>$row->name)));
+  }
+  return $entry_types;
+}
+     
+/**
+ * @ingroup hook_link()
+ */
+function kentry_link($type, $object, $teaser = FALSE) {
+  $links = array();
+  if($type == 'node' && !$teaser){
+    if($object->previous){
+      $links['p_link'] = $object->previous;
+    }
+    if($object->next){
+      $links['n_link'] = $object->next;
+    }
+  }
+  return $links;
+}
+
+
+/**
+ * @ingroup hook_insert
+ */
+function kentry_insert($node) {
+  //Pick the first one if it's a multiselect say
+  $p_tid = '';
+  if(is_array($node->taxonomy)) {
+     if (is_array($node->taxonomy[$node->posvid])) {
+       $p_tid = $node->taxonomy[$node->posvid][0]; //Use the first
+     }else {
+      $p_tid = $node->taxonomy[$node->posvid]; 
+     }
+  }
+  $vid_exists = db_result(db_query("SELECT COUNT(eid) FROM {kentry} 
+                                    WHERE vid=%d", $node->vid));
+  if(trim($node->title) && !$vid_exists){
+   $node->iso = empty($node->iso)?substr($node->type, 7):$node->iso;
+   $node->defn = empty($node->defn)?$node->body:$node->defn;
+   $status = db_query("INSERT INTO {kentry} " .
+            "(vid, word, altmisspells, priority, partofspeech, children," .
+            "defn, notes, example, `index`, updated, " .
+            "iso, submittedby, approved)
+            VALUES " .
+            "(%d, '%s', '%s', %d, '%s', '%s', " .
+            "'%s', '%s', '%s', '%s', '%s', " .
+            "'%s', '%s', %d)",
+            $node->vid, (trim($node->lexeme)=="")?$node->title:$node->lexeme,
+            $node->altmisspells, $node->priority, $p_tid,
+            isset($node->chn)?serialize($node->chn):'',
+            $node->defn, $node->notes, $node->example,
+            serialize($node->relations), $node->changed,
+         $node->iso, $node->uid, $node->approved);
+   _kentry_update_cache($node);
+  }else{
+    drupal_set_message(t('Duplicate entry for %title', 
+                       array('%title' => $node->title)));
+  }
+ return $status;
+}
+
+function _kentry_load_relations($node, $teaser=TRUE) {
+  $relations = array();
+  if(!$teaser) {
+    if(is_array($node->relations)) {
+      foreach($node->relations as $type => $relation) {
+        foreach($relation as $vid => $e) { 
+          $relations[$type][$vid] = db_fetch_array(db_query('SELECT e.word, e.iso, n.nid, n.title, n.type, d.name AS dbname,
+                                             d.vid as posvid, %d as level
+                                            FROM {node} n
+                                             LEFT JOIN {kdictionary} d
+                                              ON SUBSTR(n.type, 8)= d.iso
+                                             LEFT JOIN {kentry} e
+                                              ON n.vid=e.vid
+                                             WHERE n.vid = %d LIMIT 1', $e['level'], $vid));
+        }
+      }
+    }
+  }else {
+    $relations = $node->relations;
+  }
+  return $relations;
+}
+
+
+function _kentry_fast_load($vid, $level=0) {
+  $entry = new StdClass();
+  $entry->level = $level;
+  return $entry;
+}
+/**
+ * @ingroup hook_load TODO:needs tests
+ */
+function kentry_load($node, $refresh=FALSE) {
+  static $entry;
+  if(!isset($entry) || $refresh || ($entry->vid!=$node->vid)){
+         if(!$refresh && ($cache = cache_get("kentry:$node->vid"))){
+           $entry = unserialize($cache->data);
+           $entry->cached = 1;
+         }else{
+           //_dprint("Loading $node->vid afresh");
+           $entry = db_fetch_object(db_query('SELECT e.*, d.name AS dbname,
+                                             d.vid as posvid
+                                            FROM {kentry} e
+                                             LEFT JOIN {kdictionary} d
+                                              ON e.iso=d.iso
+                                             WHERE e.vid = %d', $node->vid));
+           $entry->teaser = node_teaser($entry->defn);
+           $examples = array();
+           $examples = kasahorow_invoke_kwapi($node, 'kentry', 'example',
+                                              $entry);
+           //Convert manually entered example returned by kentry_load into
+           //array format
+           if(isset($entry->example)){
+             $examples['default'] = $entry->example;
+          }  
+        $entry->example = $examples;
+        $entry->p_tid = $entry->partofspeech;//TODO: deprecate partofspeech
+           $entry->body = $entry->defn;
+           $entry->previous = _knode_sibling($node, 'previous', t('Previous')        );
+           $entry->next = _knode_sibling($node, 'next', t('Next'));
+           $entry->chn = _kentry_values($node);
+           if(is_array($entry->chn)) {
+             foreach($entry->chn as $kfid=>$field) {
+               if($field->ftype == 'place') {
+                 $entry->geopoint = _kplacecode_to_latlong($field->value);
+                 list($entry->latitude, $entry->longitude) =
+                     split(',',$entry->geopoint);
+               }
+             }
+           }
+           $entry->relations =
+               _derive_links($entry,
+                             variable_get("krecursion_level_$entry->iso",
+                                          variable_get('krecursion_level', 1)        ));
+           $entry->children_html = _gallery_of_notes($entry);
+           //Make sure $entry->type is set so that kentry_view() will be call        ed
+       //to cache the node for next time
+           //Set the cache here so that we have the whole node cached
+           if(!$node->nid){
+             //_dprint("node->nid is not set so loading entire node");
+             $node = node_load(array('vid' => $entry->vid));
+             //And set the same properties on $entry
+             foreach((array)$node as $key => $value) {
+              $entry->$key = $value;
+             }
+           }
+           //_dprint("Whole node $node->nid");
+           //Set the cache
+           cache_set("kentry:$node->vid", serialize($entry),
+                       'cache', CACHE_TEMPORARY);
+        }
+       }
+       return $entry;
+     }
+      /**
+      * Get synonyms of this entry. Optionally get synonyms of a particular type
+      * @ingroup themeable
+      */
+     function theme_kentry_synonyms($node, $teaser=TRUE, $type=''){
+       if(trim($type)){
+         watchdog($node->iso.'|'.$type, $node->word, array(), WATCHDOG_ALERT)        ;
+       }
+      
+       $synonyms = '';
+       $header = $rows = array();
+ 
+       if(isset($node->relations)) {
+         $synonyms = "<div class='synonyms'>";
+         if(is_array($node->relations) && count($node->relations)) {
+           $header[] = "<label>".t('See also')."</label>";
+           foreach($node->relations as $relid=>$rels) {
+             $header[$relid] = t(' %rel',
+                                 array('%rel' =>
+                              variable_get('ksynset_'.$relid.'_name','')
+                                       )
+                                 );
+             if(is_array($rels)) {
+               $i=1;
+               foreach($rels as $vid=>$rel) {
+                 $reltypes[] = $rel['type'];
+                $clean_w = strip_tags($rel['root']);
+                $rs[$rel['type']][$relid][] = l($rel['title'],
+                                                 "node/$rel[nid]",
+                                  array('attributes' => array(        ),
+                                                     'html'=> TRUE,
+                                                     'absolute'=>TRUE)).
+                "<sup>".l(t('!num', array('!num' => $i++)),
+                               'browse/'.$rel['type'].'/'.trim($clean_w, '" '        ),
+                               array('absolute' => TRUE,
+                                     'attributes' => array(
+                                        'rel' => 'lightframe',
+                                         'title' => t("other entries like !w"        ,
+                                                      array('!w' => $clean_w)        )))).
+                     "</sup>";
+               }
+             }
+           }
+         }
+         $rowtypes = is_array($reltypes)?(array_unique($reltypes)):array();
+         //Now restrict to $type
+         if($type) {
+           $rowtypes = array_intersect($rowtypes, array($type));
+         }
+         $coltypes = is_array($node->relations)?array_keys($node->relations):        array();
+        
+  foreach($rowtypes as $rowtype) {
+     $rows[$rowtype][1] = l(_name($rowtype), "browse/$rowtype",
+                          array('absolute' => TRUE,
+                      'attributes' => array('target' => $rowtype)));
+      foreach($coltypes as $coltype){
+         $rows[$rowtype][$coltype] = is_array($rs[$rowtype][$coltype])?
+               join(", ", $rs[$rowtype][$coltype]):"";
+           }
+         }
+        
+      $synonyms.= theme('table', $header, $rows, array('width'=>'99%'));
+        $synonyms .="</div>";
+       }
+       return $synonyms;
+     }
+     
+
+
+/**
+ *@ingroup hook_delete
+ */
+function kentry_delete($node) {
+  db_query("DELETE FROM {kentry} WHERE vid = '%d'", $node->vid);
+  kentry_delete_relations($node->vid);
+  _kentry_update_cache($node);
+  $server = variable_get('kdevel_sync_server', '');
+  if($server) {
+    $service = _service_name();
+    drupal_set_message(xmlrpc($server, 'app.cleanup_entry', $node->nid, $service));
+  }
+}
+     
+/**
+*@ingroup hook_update
+*/
+function kentry_update($node){
+ $partofspeech = is_array($node->taxonomy)?
+     (is_array($node->taxonomy[$node->posvid])?
+         @next($node->taxonomy[$node->posvid]) :
+         $node->taxonomy[$node->posvid]) :
+     "";
+  if($node->eid && !($node->revision)){
+     $node->iso = empty($node->iso)?substr($node->type, 7):$node->iso;
+    $node->defn = empty($node->defn)?$node->body:$node->defn;
+     db_query("UPDATE {kentry} " .
+         "SET word = '%s', altmisspells = '%s', priority = '%d', ".
+         "partofspeech = '%s', defn = '%s', notes = '%s', " .
+         "example = '%s', updated = %d, " .
+         "iso = '%s', submittedby = %d, approved = '%d' WHERE eid = %d",
+         (trim($node->lexeme)=="")?$node->title:$node->lexeme,
+         $node->altmisspells, $node->priority, $partofspeech,
+         $node->body, $node->notes, $node->example, $node->changed,
+         $node->iso, $node->uid, $node->approved, $node->eid);
+   }else{
+     db_query("INSERT INTO {kentry} " .
+         "(vid, word, altmisspells, priority, partofspeech, children, " .
+         "defn, notes, example, `index`, updated, " .
+        "iso, submittedby, approved)
+        VALUES " .
+         "(%d, '%s', '%s', %d, '%s', '%s', " .
+         "'%s', '%s', '%s', '%s', '%s', " .
+         "'%s', '%s', %d)",
+         $node->vid, (trim($node->lexeme)=="")?$node->title:$node->lexeme        ,
+     $node->altmisspells, $node->priority, $partofspeech,
+        $node->chn?serialize($node->chn):'',
+        $node->body, $node->notes, $node->example,
+         serialize($node->relations), $node->changed,
+         $node->iso, $node->uid, $node->approved);
+   }
+   _kentry_update_cache($node);
+}
+
+/**
+ *@ingroup hook_form
+ */
+function kentry_form(&$node, $form_state) {
+  include_once('kentry.admin.inc');
+  $form = _kentry_form(&$node, $form_state);
+  return $form;
+}
+     
+/**
+ *@ingroup hook_theme
+ */
+function kentry_theme(){
+    return array(
+      'kentry' => array(
+        'arguments' => array('node' => NULL, 'teaser'=>NULL, 'page'=>NULL)
+        ),
+      'kentry_terms' => array(
+        'arguments' => array('node' => NULL, 'teaser'=>NULL, 'page'=>NULL)
+        ),
+      'kentry_synonyms' => array(
+        'arguments' => array('node' => NULL, 'teaser'=>NULL, 'type'=>NULL)
+        ),
+       'kentries' => array(
+       'arguments' => array('header' => NULL, 'rows'=>NULL)
+        ),
+       'available_dicts' => array(
+          'arguments' => array('headers' => NULL,'rows' => NULL, 'desc' => NULL,'links'=>NULL)
+     ),
+       'map' => array(
+       'arguments' => array('elements'=>NULL),
+       ),
+       'kgrouping_form' => array(
+       'arguments' => array('form' => NULL),
+   ),
+       'keditmultiple_form' => array(
+       'arguments' => array('form' => NULL ),
+       ),
+
+      );
+  }
+     
+/**
+ *@ingroup hook_view
+ */
+function kentry_view($node, $teaser = FALSE, $page = FALSE) {
+  if ($page) {
+    $breadcrumb[] = l(t('Home'), '');
+        $breadcrumb[] = l(t('Browse'), 'browse');
+    $breadcrumb[] = l($node->dbname, 'browse/'.$node->iso);
+    drupal_set_breadcrumb($breadcrumb);
+    drupal_set_html_head('<meta name="keywords" content="'.
+                         $node->altmisspells .'" />');
+    drupal_set_title("$node->title - $node->dbname");
+  }
+  $node = node_prepare($node, $teaser);
+  $node->relations = _kentry_load_relations($node, $teaser);
+  $node->content['body']['#value'] = theme('kentry', $node, $teaser, $page);
+  return $node;
+}
+     
+    /**
+     *@ingroup hook_nodeapi
+     * Also index common misspellings--since they are not show on hook_view
+     */
+    function kentry_nodeapi(&$node, $op, $a3=NULL, $a4=NULL) {
+      switch($op){
+       case 'insert':
+       case 'update':
+         if(!is_array($node->chn)){
+             return;
+        }
+         foreach($node->chn as $kfid=>$value){
+        if(is_array($value) && ($value['year'] > 0)){#date/datetime field
+             $value = gmmktime($value['hour'], $value['minute'], $value['second'],
+                         $value['month'], $value['day'], $value['year']);
+           }if(is_array($value)){
+             $value = serialize($value);
+           }else{
+             $value = trim($value);
+           }  
+           _kentry_field_save($kfid, $node->vid, $value);
+         }
+         break;
+      case 'load':
+          return array('previous' => _knode_sibling($node, 'previous', t('Previous')),'next' => _knode_sibling($node, 'next', t('Next')));
+          break;
+
+      case 'update index':
+        watchdog('appengine', _kentry_to_appengine($node)); # Update the AppEngine index
+        return db_result(db_query("SELECT altmisspells FROM {kentry}
+              WHERE vid=%d", $node->vid));
+       case 'rss item':
+           if($node->geopoint){
+               return array(
+                array('key'=>'georss:point', 'value'=>$node->geopoint),
+              array('namespace' => array('xmlns:georss' =>
+                                           'http://www.georss.org/georss')),
+             );
+         }else{
+             return;
+           }
+      }
+ }
+     function _kentry_status($status){
+       global $base_path;
+       $output = '<img src="'.$base_path.drupal_get_path('module', 'kentry');
+       switch($status){
+         case -1:
+           $output.='/inc/revised.jpg" title="'.t('Quote at your own risk').'        " />'.
+                    t('Pending review');
+           break;
+         case 0:
+           $output.='/inc/pending.jpg" title="'.t(" Don't quote us on this").        '"/>'.
+                   t("Not reviewed");
+           break;
+         case 1:
+         $output.='/inc/reviewed.jpg" title="'.t('You can quote us on this'        ).'"/>'.
+                    t('Reviewed');
+           break;
+       }
+       return $output;
+     }
+     
+     /**
+      * Include a full-length APA-style citation for this entry
+      */
+     function _kentry_cite($node=NULL) {
+       return t("In !db. Retrieved !date", array(
+           '!db' => l($node->dbname, 'browse/'.$node->iso),
+          '!date' => date("h:i A F jS, Y,", $node->changed)
+           )
+       );
+     }
+     
+     /**
+     *@ingroup hook_access
+     */
+     function kentry_access($op, $node, $user) {
+       $type = empty($node->type)?$node:$node->type;
+      
+       if($op == 'create') {
+         return (user_access('suggest entry') ||
+                 user_access("suggest $type entry only"));
+       } 
+       if( $op == 'view') {
+        return (user_access('view entry') &&
+                 ($node->status || ($user->uid==$node->uid)
+                  || user_access('review entry')));
+       }
+       if($op == 'update' ) {
+         return (($user->uid && $user->uid==$node->uid)
+                OR user_access('review entry'));
+       }
+       if($op == 'delete') {
+         $iseditor = (_is_lang_editor($user->uid, $type));
+         if(user_access('review entry') && $iseditor) {
+           return TRUE;
+         }
+       }
+     }
+    
+    
+     
+     /**
+      *TODO: Function is too long. Break up into smaller pieces and add tests
+      * Show dictionary entries.
+      * Default: show all
+      * Impose a deadline to improve page generation speed.
+      * Note that the queries themselves are the slowest part of this functio        n so
+      * any optimization efforts should be targeted at the query generation t        ime
+      * Caching strategy:
+      * Generate a cache of $node->vids=>$node->titles using the index as the         key
+      * When a query comes in, select the cache(s) that have the same startin        g
+      * character sequence as the query term and look in the relevant caches         to
+      * generate the results
+      */
+     function kentry_page($letter, $status, $db='%', $raw=FALSE, $toDisplay=0        ,
+        $refresh=FALSE, $exclude_vids = array()){
+       global $pager_page_array, $pager_total, $pager_total_items;
+       static $rows, $header, $cache;
+       $cache = array();
+       $matched_vids = array();
+       $toDisplay = $toDisplay>0 ?
+                  $toDisplay : variable_get('kasahorow_entries_per_page', 10        );
+       $start = $_GET['page'] * $toDisplay;
+       $letter = trim($letter, "'\t \"");
+       $letter_index = array_unique(str_split($letter));
+       $status = check_plain($status);
+       switch($status){
+         case '':
+           $status = '%';
+           break;
+         default:
+           $status = is_numeric($status)?$status:1;
+           break;
+       }
+      if(variable_get('kentry_page_v1', 1) == 1) {
+         if(!isset($rows) && !isset($header)){
+           $cache = _kclient_cache("kentry_page_rows:$letter#".
+                                   "$db#$status#$toDisplay#$_GET[page]");
+           if(!$cache->hit){//Try the client-side cache first!
+             $cache = cache_get("kentry_page_rows:$letter#$db#".
+                                "$status#$toDisplay#$_GET[page]");
+           }
+           $rows = $cache->data['rows'];
+           $cached_rows = count($rows)?join(',', array_keys($rows)):-1;
+          $header = $cache->data['header'];
+          $pager_page_array = $cache->data['pager_page_array'];
+          $pager_total = $cache->data['pager_total'];
+          $pager_total_items = $cache->data['pager_total_items'];
+      
+           if(!$refresh && $cache && (count($cache->data['rows']) ==
+               min($toDisplay,
+                  floor($pager_total_items[0]/(1+$pager_page_array[0]))))){         
+//The min() always returns the number of results expected per page
+//so do not use the cached version if its number of results is
+//less than what is expected.
+           }else {
+             $sort = unserialize((db_result(db_query("SELECT alphabets
+                                                    FROM {kdictionary}
+                   WHERE iso = '%s'", $db )        )));
+             $searchterm = addslashes($letter.'%');
+             $count_query = "SELECT COUNT(k.vid) FROM {kentry} k
+                 INNER JOIN {node} n ON k.vid=n.vid
+                WHERE n.status>0 ".
+                ($searchterm=='%'?'':"AND (k.word
+                  LIKE '$searchterm' OR n.title LIKE '$searchterm')").
+                     "AND k.iso LIKE '$db'".
+                     ($status!='%'?"AND k.approved LIKE '$status'":'');
+             $num_results = empty($pager_total_items[0])?
+                 db_result(db_query($count_query)):$pager_total_items[0];
+           $count_query = sprintf("SELECT %d", $num_results);
+             if($num_results){
+               $res = pager_query("SELECT n.vid, n.nid, n.title
+                   FROM {kentry} k
+                   INNER JOIN {node} n ON k.vid=n.vid
+                   WHERE n.`status`>0 AND (k.word
+                   LIKE '$searchterm' OR n.title LIKE '$searchterm')
+                   AND k.iso LIKE '$db'
+                   AND k.approved LIKE '$status'
+                   AND k.vid NOT IN ($cached_rows)
+                   ORDER BY k.word, k.grouping, k.priority, n.title
+                   ASC", ($toDisplay-count($rows)), 0, $count_query);
+               $header=array('db'=>$db);
+               _kreset_timer('kentry_page');
+               timer_start('kentry_page');
+               while($row = db_fetch_object($res)){
+                 if(timer_read('kentry_page') <
+                    variable_get('kentry_page_deadline', 2500)){
+                  $rows[$row->vid] = node_load(array('nid'=>$row->nid));
+                }else{
+                  drupal_set_message(t('Request timed out. Refresh to see %d more results', array('%d' => ($num_results = count($rows)))), 'warning');
+                  timer_stop('kentry_page');
+                   watchdog('kentry_page', 'Exceeded deadline: %n ms',
+                            array('%n'=>timer_read('kentry_page'),
+
+                                WATCHDOG_WARNING));
+                 break;//Get out of the while loop
+                }
+               }
+             }
+     
+             $pageinfo['header'] = $header;
+             $pageinfo['rows'] = $rows;
+             $pageinfo['pager_page_array'] = $pager_page_array;
+             $pageinfo['pager_total'] = $pager_total;
+             $pageinfo['pager_total_items'] = $pager_total_items;
+    
+             if(count($rows)) {//Cache the real results
+              cache_set(
+                "kentry_page_rows:$letter#$db#$status#$toDisplay#$_GET[page]        ",
+                   $pageinfo, 'cache', CACHE_TEMPORARY);
+             }
+           }
+         }
+      }else if(variable_get('kentry_page_v1', 1) ==2) {_dprint('v2');
+         $rows = array();
+         $search_depth = variable_get('ksearch_depth', 2);
+         $count = 0;
+        for($i = 0; $i < $search_depth; $i++) {
+           $filter = substr($letter, $i);
+           if(!$filter || $_GET['browse']==1) {//no $letter was presented
+           //or we're browsing
+             $filter = "$filter%"; //fuzzy filter
+           }
+           $index = db_fetch_array(db_query("SELECT * FROM {kentry_index}
+                                            WHERE word LIKE '%s' LIMIT 1",
+                                            "$db#$filter"));
+     
+           if($index['word'] == "$db#$filter"){
+             $exclude_vids = array_unique(array_merge($exclude_vids,
+                                         split(',', $index['vids'])
+                                         ));
+          }
+     
+          //We do not order by word,grouping,priority to shift the sorting l        oad
+           //from the database server to the application servers
+           $q = db_query("SELECT vid,word,iso,grouping,priority FROM {kentry}        
+                        WHERE `iso` LIKE '%s' AND word LIKE '%s' ".
+                         (!empty($exclude_vids)?' AND vid NOT IN ('.
+                          join(',', $exclude_vids).') ':'').
+                         //"ORDER BY word, grouping, priority
+                        "LIMIT %d, %d",
+                         $db, $filter, $start, $toDisplay+1
+                         );
+          $clusters = array();
+           $ranks = array();
+           while($r = db_fetch_object($q)){
+             _kentry_indexer("$r->iso#$r->word", $r->vid, $r->grouping, $r->priority);
+             $matched_vids[] = $r->vid;
+             $clusters[] = $r->grouping;
+             $ranks[] = $r->priority;
+             $count++;
+           }
+           if($count) {
+            //Manually update the index so we don't have to hit the db
+             $index['word'] = empty($index['word'])?$filter:$index['word'];
+             $index['vids'] = $index['vids']?
+       $index['vids'].','.join(',', $matched_vids):join(',', $matched_vids);
+             $index['clusters'] = $index['clusters']?
+              $index['clusters'].','.join(',', $clusters):join(',', $clusters);
+            $index['ranks'] = $index['ranks']?
+               $index['ranks'].','.join(',', $ranks):join(',', $ranks);              
+           }
+           if($index['word']) {
+             $cache["$db#$filter"] = $index;
+          }
+         }
+     
+         //Now let's do the ranking on the application side instead
+         if(count($cache)) {
+           $unranked = _kentry_page_helper($letter, $cache, $toDisplay);
+           asort($unranked); //Now let's sort by ascending rank
+     
+           $ranked = array_keys($unranked);
+          _dprint('Returned '.count($ranked));
+      
+           $found_count = count($unranked);
+         }else{
+           $found_count = 0;
+         }
+      /*variable_get('kpager_max_rows',
+                                                                $toDisplay*10        )*/
+         //Now let's set the pager variables
+         pager_query("SELECT 1", $toDisplay, 0, "SELECT $found_count");
+     
+         _dprint("Starting at result $start");
+         //And let's get the nodes proper
+         _kreset_timer('kentry_page');
+         timer_start('kentry_page');
+         for($i = $start; $i < min($found_count, ($start+$toDisplay)); $i++)         {
+           if(($time = timer_read('kentry_page')) <
+                       ($deadline = variable_get('kentry_page_deadline', 250)        )){
+             $tmp = _knode_load($ranked[$i]);
+     
+            if($tmp->status > 0) { //Node is published
+              $rows[$ranked[$i]] = $tmp;
+             }else {
+              _dprint("Skipped unpublished node: ".l($tmp->word, "node/$tmp-        >nid"));
+             }
+         }else{
+             timer_stop('kentry_page');
+             watchdog('kentry_page', 'Exceeded %dms deadline: %nms',
+                 array('%n' => $time, '%d' => $deadline),
+                       WATCHDOG_WARNING);
+            _dprint("Stopping at result $i");
+             break; //Get out of this loop
+           }
+         }
+       }else {
+       _dprint('SphinxSearch Version of kentry_page()');
+       if(!module_exists('sphinx')) {
+         include_once('sphinxapi.php');
+       }
+        $client = new SphinxClient();
+        $client->SetServer(variable_get('sphinx_default_server', 'localhost')        ,
+                           (int)variable_get('sphinx_default_port', 3312));
+         $connect = $client->_Connect();
+         if (!$connect) {
+           watchdog('kentry',
+                    variable_get('sphinx_offline_message', 'Sphinx offline'))        ;
+          _dprint(variable_get('sphinx_offline_message', 'Sphinx offline'));
+        }
+         //NB: The assumption here is that there's a sphinx index on the sphi        nx server
+         //with the same name as the site database
+        $sphinx_index = db_set_active();
+         $client->SetLimits((int)$start, (int)$toDisplay);
+         $client->SetMatchMode(SPH_MATCH_EXTENDED2);
+         $client->SetSortMode(SPH_SORT_EXTENDED,
+                             ('@rank grouping ASC, priority ASC'));
+         if($status != '%') {
+           $client->SetFilter('approved', array($status));
+         }
+         $client->AddQuery("@(title,word) $letter @iso $db", $sphinx_index);
+     
+         $results = $client->RunQueries();
+     
+        $found_count = $results[0]['total_found']?$results[0]['total_found']        :0;
+         //Set the internal Drupal pager variables so that theme_pager() work        s
+         pager_query("SELECT 1", $toDisplay, 0, "SELECT $found_count");
+     
+         if($results[0]['total']) {
+          foreach($results[0]['matches'] as $vid => $props) {
+             $rows[$vid] = _knode_load($vid);
+          }
+         }else{
+           $q = pager_query("SELECT vid FROM {kentry}
+                            WHERE word LIKE '$letter%' AND iso='$db'
+                            ORDER BY grouping, priority, word",
+                           $toDisplay);
+          while ($r = db_fetch_object($q)) {
+            $rows[$r->vid] = _knode_load($r->vid);
+          }
+        }
+       }
+     
+       //Check if no rows returned and send to the conceptanalyzer
+       //to do further analysis of the query
+       //It's a translation query most likely
+       if(count($rows)==0){
+         //Let's do some static concepts
+         $rows = _space_splitter($letter, $db);
+      
+         //Now get more concepts from the database
+         $concept_q = db_query("SELECT vid FROM {kentry} k
+                               WHERE k.word LIKE '#%%' AND iso = '%s'
+                               ORDER BY k.word, k.grouping, k.priority LIMIT         %d",
+                               $db, $toDisplay);
+         while($r = db_fetch_object($concept_q)){
+           $concept_node = _kconcept_parser(_knode_load($r->vid),
+                                            $letter);
+           if($concept_node!=NULL){
+               $rows[$r->vid] = $concept_node;
+          }
+         }
+       }
+     
+       $rows = count($rows)?$rows:array();  //make sure rows is an array
+       if($raw){
+         return $rows;
+       }else{
+         $output.= theme('kentries', $header, $rows);
+         $output.= theme_pager(array(), $toDisplay);
+         return $output;
+      }
+     }
+     
+     function _space_splitter($letter, $db, $toDisplay=10) {
+       $rows = array();
+       if(!trim($letter)) {return $rows; }
+       $tokens = split(' ', $letter);
+       if(count($tokens)) {
+         for($i = 0; $i < $toDisplay; $i++) {
+           $token = $tokens[$i];
+           //Select the best result per token (highest group, highest priorit        y entry)
+           $q = db_query("SELECT vid FROM {kentry} WHERE word LIKE '%s' AND iso='%s'
+                         ORDER BY grouping, priority, word LIMIT 1", trim($token),
+                         $db);
+           while($r = db_fetch_object($q)) {
+            $rows[$r->vid] = _knode_load($r->vid);
+           }
+         }
+       }
+       return $rows;
+     }
+    
+     function _kentry_page_helper($letter, $cache, $toDisplay){
+      $rows = array();
+       for($i = 0; $i < 1; $i++){
+         $search_str = substr($letter, $i);
+         foreach($cache as $title => $props){
+           $vids = strpos($props['vids'], ',')?
+              split(',', $props['vids']):array($props['vids']);
+         $clusters = split(',', $props['clusters']);
+           $ranks = split(',', $props['ranks']);
+           foreach($vids as $key => $vid) {
+             if($search_str) {
+               //$position = strpos(strtolower($title), strtolower($search_st        r));
+              $position = ($clusters[$key]*$toDisplay) + $ranks[$key];
+            }else{
+               $position = 0;
+             }
+            //TODO(paakwesi)--investigate adding the position of the first
+            //character in the db's alphabet to the $position here to
+            //make it be sorted by the db's alphabet
+             $rows[$vid] = $position;// + strlen(substr($title, $rank));
+           }
+      
+         }
+   }
+       return $rows; //Worst case
+     }
+     
+     function _knode_load($vid) {
+       $node = _kclient_cache("kentry:$vid");
+      if($node == NULL) {
+         $fakenode = new stdClass();
+        $fakenode->vid = $vid;
+         $tmp = new stdClass();
+         $node = kentry_load($fakenode);
+      }
+       return $node;
+     }
+   /**
+     * Entry page
+     * @ingroup themeable
+     */
+    function theme_kentries($headers, $rows){
+      $output = '';
+       $page = '<div id="find">'.(
+           (isset($_GET['page'])?t('Page').' '.($_GET['page']+1):t('Page').'1')).
+          '</div>';
+      foreach($rows as $vid => $entry){
+        $output.='<div class="kentry state'.$entry->approved.'">' .
+             node_view($entry, 1, 0, 0)."</div>";
+      }
+      return '<div class="entrypage">'.$page.$output.'</div>';
+   }
+   
+function theme_kentry_format_example($node, $source) {
+  $formatted = "<span class='example $source'>".
+               preg_replace("/~/", $node->word, $node->example[$source]). 
+               "</span>";
+  return $formatted;
+}
+/**
+ * Format the entry for display
+ * @ingroup themeable
+ */
+function theme_kentry($node, $teaser = FALSE, $page = FALSE){
+  global $user;
+      $process = '';
+       $nodisplay = (variable_get('kentry_show', array()));
+      drupal_add_css(drupal_get_path('module', 'kentry').'/kentry.css');
+       $output = $word_classes = $variants = $semantic_relations = $partofspeech = '';
+      $partofspeech = is_array($node->taxonomy)?l($node->taxonomy[$node->partofspeech]->name, "taxonomy/term/".$node->partofspeech):"";
+       $wordnets = "";
+    $labels = unserialize(db_result(db_query("SELECT labels FROM {kdictionary}
+ WHERE iso = '%s'", $node->iso)));
+      if(!empty($node->example)) {
+         $examples = "<div class='examples'>";
+        if(is_array($node->example)) {
+          foreach($node->example as $source=>$example){
+             if(trim($example)!="" && ($source!='default')){
+              $examples.= "<div class='example'>".'<label>'.
+                           t('From the %source', array('%source'=>$source)).
+                          '</label>: '.check_markup(preg_replace("/~/",
+                                           theme('placeholder', $node->word),
+                                          $example), $node->format, 0)."</div>";
+            }else if(trim($example)!=""){
+               $examples.= "<div class='example'>".'<label>'.
+               $labels['example']['title'].'</label>:<span class="default">'.
+                          check_markup(preg_replace("/~/", theme('placeholder',
+                                                                  $node->word),
+                                                                               
+                                                     $example), $node->format, 0).
+                           "</span></div>";
+             }
+          }
+        }
+         $examples .="</div>";
+       }
+       if($page) {
+         $output.= '<div class="kentrywide state'.$node->approved.'" id="kentry'.$node->nid.'">';
+         $output.= (strip_tags($node->children_html) && !$nodisplay['children'])?
+             ($node->children_html):'';
+        $output.= ($node->defn&&!$nodisplay['defn'])?("<div class='definition'>".
+                         check_markup($node->defn,
+                         $node->format, 0)."</div>"):'';
+
+     $output.=(strip_tags($examples)&&!$nodisplay['example'])?$examples:'';
+         $output.= ($node->notes&&!$nodisplay['notes'])?
+                      ("<div class='notes'><label>".t('Notes')."</label>&nbsp;".
+                        check_markup($node->notes, $node->format, 0)."</div>"):'';
+         $output.='</div>';  //end class=kentrywide
+        //if output is still empty, do not show anything
+         $output = strip_tags($output)?$output:'';
+     
+         $output.=(!$nodisplay['term_data'])?theme('kentry_terms', $node, $teaser, $page):'';
+     
+         //what is the source? show only on non-node previews                        
+        if(variable_get('kentry_showcitation', FALSE)){
+           $output.= "<div class='citation'><span class='reviewstatus'>".
+              _kentry_status($node->approved)."</span><b>".
+               t('Cite')."</b><br/>".$node->title.'. '.$partofspeech.'. '.
+              _kentry_cite($node)." ".t("from !url",
+                                         array('!url' =>
+                                            url(drupal_get_path_alias("node/$node->nid"),
+  array('absolute'=>TRUE))))."</div>";
+ }
+    
+$output.=(!$nodisplay['links'])?theme('kentry_synonyms', $node, 0):'';
+    
+ if(variable_get('show_linksgroupingtool', FALSE)) {
+     #foreach($node->relations as $relid=>$rels){
+if(user_access('review entry') && count($node->relations)){//TODO: make 'review entry' perms database-specific e.g. 'review akan entries only'
+     $output.= "<div class='title'>".t('modify display order of %dbase %relid entries linked with %group', array('%dbase'=>'', '%relid'=>variable_get('ksynset_'.$relid.'_name',''), '%group'=>$node->title))."</div>";
+     $output.= "<div>".t('If you have JavaScript enabled you can use the <span style="cursor: crosshair;">cross-hair handle at the beginning of each row</span> to move entries up or down to reorder them')."</div>";
+     $output.= l(t('Return to %group', array('%group'=>$start)), "browse/$iso/$start", array('html'=>TRUE));
+     $output.= drupal_get_form('kgrouping_form', $node->vid, '', 'links');
+     $output .= theme('pager', NULL, $page_increment);
+ }
+     #}
+ }
+      
+      }else{
+if(substr($node->word, 0, 1) == '#') {
+  $output.= $node->notes;
+ }else {
+  $output.= $node->teaser?"<span class='teaser'>".
+      check_markup($node->teaser, $node->format, 0)."</span>":
+ $node->children_html;
+}
+      }
+     $output.= '<div style="clear:both;"></div>';
+     return $output;
+   }
+    
+function theme_kentry_terms($node, $teaser = FALSE, $page = FALSE) {
+      $output = '';
+     $donotshow = variable_get('kentry_show',array());
+      if(!$donotshow['term_data'] && is_array($node->taxonomy) && !$teaser) {
+foreach($node->taxonomy as $tid => $term_data) {
+ if(trim($term_data->description)) { //Only show this if there's a desc
+    $output.="<dl id=vid$term_data->vid>";
+    $output.= '<dt>'.t("%title (%term)",
+      array('%title' => $node->title,
+    '%term' => $term_data->name)
+      ).'</dt>';
+   $term_data->description = strtr($term_data->description,
+   array('#' => $term_data->name,
+ '~' => $node->word,
+     '%title' => $node->title,
+  '%term' => $term_data->name,
+   '%root' => $node->word)
+   );
+    //Now parse for special grammar tags such as
+    //<k:g "nr"="nd" 'ra'='ma'>n~a</k:g>
+   $matches = array();
+    $status = preg_match_all('/<k:g\s+(.*?)>(.*?)<\/k:g>/',
+     $term_data->description, $matches);
+    $transformer = array();
+   if($status) {
+     _dprint($matches);
+      foreach($matches[1] as $key => $rules) {
+       $limit = -1;
+$transform = $matches[0][$key];
+foreach(split(' ', $rules) as $match) {
+  @list($find, $replace) = @split('=', $match);
+  //_dprint("Replace $find with $replace in '$transform'");
+  $transform = @preg_replace('/'.trim($find, "' \"").'/',
+   trim($replace, "' \""),
+   $transform,
+   $limit);
+  //_dprint($transform);
+  $transformer[$matches[0][$key]] = $transform;
+       }
+      }
+    $term_data->description = strtr($term_data->description,
+     $transformer);
+    }
+    $output.= '<dd>';
+   $output.= check_markup($term_data->description, $node->format, 0);
+    $output.= '</dd>';
+   $output.="</dl>";
+ }
+       }
+      }
+      return $output;
+    }
+    
+     /**
+     * Get lexemes from entry table.
+     * @param string $name - the lexeme(node->title).
+     * The lexeme may come with the entry id appended to the front (simplest case).
+     * @param string $iso - the iso of the entry
+     * @return array of entries
+     */
+   function kentry_get_entry_by_name($name, $iso) {
+      $nid = split(':',$name);
+      $nid = $nid[0];
+      $result = array();
+      if($nid > 0){//Yay!
+       $result[] = node_load($nid);
+      }else{
+    $db_result = db_query("SELECT n.title, t.vid, t.* FROM {kentry} t
+      INNER JOIN {node} n ON t.vid = n.vid
+      WHERE LOWER('%s') LIKE LOWER(n.title) AND language='%s'", trim($name), $iso);
+while ($type = db_fetch_object($db_result)) {
+    $result[] = $type;
+}
+      }
+      return $result;
+    }
+    
+   /**
+   * Remove associations of a node to its synonyms.
+   */
+  function kentry_delete_relations($vid) {
+      return db_query('DELETE FROM {kentry_synonyms} WHERE vid = %d OR svid=%d',
+      $vid, $vid);
+   }
+    
+   
+   /**
+   * Synonym autocomplete by title
+   * Return the vid of the synonym
+   * if there is more than one suggestion which has quotes around it
+   */
+    function _suggest_synonyms($iso='', $nid='', $like='', $showvid=TRUE) {
+      $dbnames = variable_get('kclient_db_names', array());
+      // The user enters a comma-separated list of tags. We only autocomplete
+      // the last tag. This regexp allows the following types of user input:
+      // this, "somecmpany, llc", "and ""this"" w,o.rks", foo bar
+     $regexp = '%(?:^|,\ *)("(?>[^"]*)(?>""[^"]* )*"|(?: [^",]*))%x';
+      preg_match_all($regexp, $like, $matches);
+     $array = $matches[1];
+      // Fetch last tag
+      $last_string = trim(array_pop($array));
+     if($last_string != ',') {
+$prefix = count($array) ? implode(', ', $array) .', ' : '';
+$q = db_query("SELECT * FROM {node} n, kentry k
+WHERE n.type LIKE 'kentry_%s%%' AND n.vid=k.vid
+    AND title LIKE '%s%%' AND n.nid!='%d'
+ORDER BY n.title LIMIT 15",
+$iso, $last_string, $nid);
+while($row = db_fetch_object($q)){
+  if(!$showvid) {
+   $n = $row->title;
+  }else {
+    $n = $row->vid.':'.$row->title;
+ }
+  // Commas and quotes in entries are special cases, so encode 'em.
+  if (preg_match('/,/', $row->title) ||
+      preg_match('/"/', $row->title)) {
+    $n = $row->vid.':'.'"'. preg_replace('/"/', '""',
+ $row->title) .'"';
+  }
+  $pos = module_exists('taxonomy')?
+      taxonomy_get_term($row->partofspeech):'';
+  $output[$prefix.$n]='<b>'.$row->title.'</b> ('.$pos->name.'),
+      <em>'.$dbnames[$row->iso].'</em> '.
+      l(t('View'), "node/$row->nid", array('attributes' =>
+  array('target' => 'autosuggest')
+   ))."\n\t".
+     node_teaser($row->defn,FILTER_FORMAT_DEFAULT, 200);
+}
+       }
+     if(!count($output)) {
+       $output[0] = l(t('No matching entry found. '.
+'Add it and return to this page'), "node/add/kentry-$iso",
+   array('query' => "destination=node/$nid/relations"));
+      }
+     drupal_json($output);
+    }
+    
+    /**
+    * Synonym autocomplete by word/phrase or eid
+    * Return the nid of the synonym
+    * if there is more than one suggestion which has quotes around it
+    * Same as suggest_entries except for $output formatting
+    */
+    function _check_entries($iso='', $like=''){
+     return _suggest_synonyms($iso, 0, $like, FALSE);
+   }
+   
+    /**
+    * Implemenation of kasahorow api
+    */
+   function kentry_kwapi(&$kasa, $op, $a3 = NULL, $a4 = NULL){
+     $output = '';
+  $dbs = array();
+ foreach(_kasahorow_entry_types(NULL) as $db=>$name){
+      $dbs[$db] = l($name, 'admin/content/kw/kentry/edit/'.$db );
+}
+       $settings = join($dbs, ', ');
+
+     switch($op){
+       case 'admin':
+ $output = array(array(
+l(t('Content types'),'admin/content/kw/kentry'),
+     kentry_help('admin/modules#description').' '.$settings,
+      l(t('Settings'),'admin/content/kw/settings/kentry')
+));
+  break;
+case 'kentry':
+  switch($a3){
+  case 'example':
+  break;
+  case 'synonyms':
+  break;
+  }
+  break;
+      }
+      return $output;
+    }
+   /**
+    * Return the DTD used to validate/export entries
+    */
+    function _kentry_dtd(){
+//header(
+print variable_get('kentry_dtd', '');
+   }
+   
+    function _default_fields() {
+      return array(
+       'word'=>array('title' => t('Group'),
+'desc' => t('Put the common group that this entry '.
+   'belongs to here')),
+ 'defn'=>array('title' => t('Definition'),
+'desc' => t('Describe this entry here')),
+  'example'=>array('title'=>t('Example'),
+   'desc'=>t('Put a sample usage of this entry here')),
+ );
+   }
+   
+    /**
+    * Get the explicit relations for this entry
+    */
+    function _get_relations($vid){
+      $db_result = db_query("SELECT * FROM {kentry_synonyms} WHERE vid=%d", $vid);
+      $result = array();
+      while ($type = db_fetch_object($db_result)) {
+    $entry = node_load(array('vid'=>$type->svid));
+    if (preg_match('/,/', $entry->title) || preg_match('/"/', $entry->title)) {
+    $entry->title = '"'. preg_replace('/"/', '""', $entry->title) .'"';
+ }
+ $pos = module_exists('taxonomy')?
+  taxonomy_get_term($entry->partofspeech):'';
+  $output ='<b>'.$entry->title.'</b> ('.$pos->name.'), '.
+     l(t('View'), "node/$entry->nid", array('attributes'=>array('target'=>'autosuggest')))."\n\t".
+      node_teaser($match->defn,FILTER_FORMAT_DEFAULT, 200);
+     $result[$type->iso][$type->relid][$type->svid]= $output;
+     }
+      return $result;
+    }
+    
+    
+   /**
+   * Automatically derive relations
+   * Recursively traverse the links table looking for links
+   * $type=0: Turn off
+   * $type=1: Search parents and children only
+   * $type=2: Search up to grandparents/grandchildren only
+   * Default deadline for returning results=100ms
+   * The derived links are also cached in the {kentry} table
+   * TODO(paakwesi): how do we know we have all possible links? Write tests!
+   *   For now simply set a max number of links beyond which we will not go
+   */
+function _derive_links($node=NULL, $type=0){
+  global $timers;
+  $node = (object) $node;
+  $maxlinks = variable_get('kentry_maxlinks', 200);
+  //reset the timer
+  _kreset_timer('derive_links');
+  timer_start('derive_links');
+  //_dprint('Deriving links afresh for '.$node->vid);
+  $relations = array();
+  $links = array($node->vid => $node->vid);
+    /* $linkcount = $cachedlinkcount = 0;
+     
+     if(is_array($linkcache  = unserialize($node->index))) {
+foreach($linkcache as $relid => $values) {
+  if(is_array($values)){
+   foreach($values as $vid => $link) {
+      $links[$vid] = (object)$link;
+    
+   $relations[$relid][$vid] = $link;
+     $cachedlinkcount++;
+    }
+  }
+}
+     }
+   if($cachedlinkcount >= $maxlinks) {
+      return $relations; //Do not bother
+      }
+    */
+  switch($type) {
+    case 0://No links so do nothing
+      break;
+    case 1:
+      $ancestors = _get_ancestors($node->vid);
+      foreach($ancestors as $rel) {
+        if(!in_array($rel->svid, $links)) { # new relation
+          $links[$rel->svid] = $rel->svid;
+          $relations[$rel->relid][$rel->svid] = (array)_kentry_fast_load($rel->svid, -1); # backward in time
+          $linkcount++;
+        }
+     }
+     $descendants = _get_descendants($node->vid);
+     foreach($descendants as $rel){
+        if(!in_array($rel->vid, $links)) { # new relation
+          $links[$rel->vid] = $rel->vid;
+          $relations[$rel->relid][$rel->vid] = (array)_kentry_fast_load($rel->vid, 1); # forward in time
+          $linkcount++;
+    }
+  }
+  break;
+case 2:
+  $relations = _derive_links($node, 1); # get the first degree relations
+  $deg2_descendants = array();
+  $deg2_ancestors = array();
+  foreach($relations as $relid=>$relnodes) {
+    foreach($relnodes as $vid => $relatednode) {
+      if($relatednode['level'] >= 0) {
+        $deg2_descendants = array_merge($deg2_descendants, _get_descendants($vid));
+      }else {
+        $deg2_ancestors = array_merge($deg2_ancestors, _get_ancestors($vid)); 
+      }
+    }
+  }
+  foreach($deg2_ancestors as $rel) {
+    if(!in_array($rel->svid, $links)) { # new relation
+          $links[$rel->svid] = $rel->svid;
+          $relations[$rel->relid][$rel->svid] = (array)_kentry_fast_load($rel->svid, -2); # backward in time
+          $linkcount++;
+    }
+  }
+  foreach($deg2_descendants as $rel){
+    if(!in_array($rel->vid, $links)) { # new relation
+          $links[$rel->vid] = $rel->vid;
+          $relations[$rel->relid][$rel->vid] = (array)_kentry_fast_load($rel->vid, 2); # forward in time
+          $linkcount++;
+    } 
+  }  
+#print_r($relations);
+/*
+     
+  $descendants_of_ancestors = array();
+  $ancestors_of_descendants = array();
+ foreach($descendants as $k=>$descendant){
+    $ancestors_of_descendants =
+_merge_relations($ancestors_of_descendants,
+ _get_ancestors($descendant->vid, 100*$k,
+$descendants));
+  }
+    
+  foreach($ancestors_of_descendants as $vid=>$rel){
+   if($rel->vid!=$node->vid && empty($relations[$rel->relid][$rel->vid])){
+     $relations[$rel->relid][$rel->vid] = (array)$rel;
+      $linkcount++;
+    }
+  }
+    
+  foreach($ancestors as $k=>$ancestor){
+    $descendants_of_ancestors =
+_merge_relations($descendants_of_ancestors,
+ _get_descendants($ancestor->vid, 100*$k,
+  $ancestors));
+  }
+    
+  foreach($descendants_of_ancestors as $vid=>$rel){
+    if($rel->vid!=$node->vid && empty($relations[$rel->relid][$rel->vid])){
+      $relations[$rel->relid][$rel->vid] = (array)$rel;
+      $linkcount++;
+    }
+  }*/
+  break;
+      }
+    timer_stop('derive_links');
+  
+     //Now cache the relations in the kentry table
+     db_query("UPDATE {kentry} SET `index`='%s' WHERE vid=%d",
+      serialize($relations), $node->vid);
+     
+    //_dprint("$cachedlinkcount cached links.".
+//      "$linkcount links derived for $node->vid.");
+  return $relations;
+}
+   
+/**
+ * Do not spend more than 50ms looking for links
+ */
+function _get_ancestors($vid, $relations=array()){
+  $elapsed = timer_read('derive_links');
+  if( $elapsed > variable_get('kderive_links_deadline', 150)){
+    watchdog('derive_links', 'Exceeded deadline %dms',
+     array('%d'=>$elapsed));
+    return $relations;
+  }
+
+  $exclude = count($relations)?array_keys($relations):array(-1);
+  /*$q = db_queryd("SELECT n.nid, k.word as root, s.relid,
+    s.grouping as cluster, s.priority as rank,
+SUBSTR(n.type, 8) as iso, s.svid,
+n.title, n.vid  FROM {kentry_synonyms} s
+INNER JOIN {node} n ON s.svid=n.vid
+INNER JOIN {kentry} k ON s.svid=k.vid
+       WHERE s.vid =%d AND k.vid NOT IN (%s)
+ORDER BY s.grouping, s.priority", $vid,
+join(',', $exclude));
+  while($r = db_fetch_object($q)){
+    if(empty($relations[$r->vid])){
+$r->type = $r->iso;
+$r->level = $level;
+$relations[$r->vid] = $r;
+$relations = _merge_relations($relations, _get_ancestors($r->svid, $level+1,  $relations));
+   }
+  }*/
+  $seen = join(',', $exclude);
+  $db = new KDatabase('kentry_synonyms');
+  $rows = $db->RetrieveRows(array('wheres' => array("vid=$vid", 
+                                                   "vid NOT IN ($seen)"),
+                                  'order' => array('grouping', 'priority')));
+  
+  return $rows;
+}
+   
+   /**
+    * Do not spend more than 50ms looking for links
+    */
+function _get_descendants($vid, $relations=array()){
+  $elapsed = timer_read('derive_links');
+       if( $elapsed > variable_get('kderive_links_deadline', 50)){
+    watchdog('derive_links', 'Exceeded deadline %dms',
+     array('%d'=>$elapsed));
+    return $relations;
+  }
+  $exclude = count($relations)?array_keys($relations):array(-1);
+  $seen = join(',', $exclude);
+  $db = new KDatabase('kentry_synonyms');
+  $rows = $db->RetrieveRows(array('wheres' => array("svid=$vid", 
+                                                   "svid NOT IN ($seen)"),
+                                  'order' => array('grouping', 'priority')));
+  return $rows;
+$q = db_query("SELECT n.nid, k.word as root, s.relid,
+      s.grouping as cluster, s.priority as rank,
+SUBSTR(n.type, 8) as iso, s.svid,
+       n.title, n.vid  FROM {kentry_synonyms} s
+INNER JOIN {node} n ON s.vid=n.vid
+       INNER JOIN {kentry} k ON s.vid=k.vid
+       WHERE s.svid =%d AND k.vid NOT IN (%s)
+       ORDER BY s.grouping, s.priority", $vid,
+      join(',', $exclude));
+       while($r = db_fetch_object($q)){
+    if(empty($relations[$r->vid])){
+$r->type = $r->iso;
+$r->level = $level;
+      $relations[$r->vid] = $r;
+$relations = _merge_relations($relations,
+     _get_descendants($r->vid,
+       $level-1,
+       $relations)
+      );
+    }
+}
+       return $relations;
+    }
+   
+    /**
+     *Merge 2 relations arrays
+     */
+   function _merge_relations($rel1, $rel2){
+//Check for the simple cases to speed things up
+if(count($rel1) && !count($rel2)){
+    return $rel1;
+}
+     
+       if(count($rel2) && !count($rel1)){
+    return $rel2;
+}
+   
+$diff = array_diff(array_keys($rel1), array_keys($rel2));
+foreach($diff as $key){
+    $rel2[$key] = $rel1[$key];
+       }
+return $rel2;
+    }
+    
+    function _search_links_form($values){
+$form = array();
+$form['term'] = array('#type'=>'textfield',
+   '#field_prefix'=>t('Get links to'), '#size'=>'15',
+    '#field_suffix'=>t('in'));
+$form['target'] = array('#type'=>'select', '#options'=>_kdatabases(TRUE));
+$form['go'] = array('#type'=>'submit', '#value'=>t('Show links'));
+       if(!empty($values['results'])){
+    $form['results'] = array('#title'=>t('Results'), '#type'=>'fieldset',
+'#description'=>$values['results']);
+}
+return $form;
+    }
+  
+    function _kreset_timer($name){
+       global $timers;
+$timers[$name]['time'] = 0;
+    }
+   
+  /**
+  * Analyze a query with different concepts to
+  * return possible results
+  * A concept is any kentry whose 'word' field starts with a '#' sign
+  * TODO: Define a small language for expressing concepts instead of using
+  * PHP since someone can define a 'delete * from db' type of function :(
+  * This function should return 'NULL' if it has nothing to contribute
+  * This means the concept callback function should also return NULL if it has
+  * nothing to contribute
+  */
+   function _kconcept_parser($node, $query){
+   $forbidden_fn_keywords = array(
+ 'system', 'mysql_query', 'db_query',
+ 'shell_exec', 'passthru', 'exit', 'db_queryd'
+ );
+     $node->kquery = $query;
+ if(count(array_intersect($forbidden_fn_keywords, split(" ", $node->defn)))){
+ watchdog('error', 'Concept contains forbidden !keywords',
+   array('!keywords'=>join(', ', $forbidden_fn_keywords))
+    );
+   }else{
+  $callback = @create_function('$node, $query', $node->defn);
+ if($callback){//no errors
+     $concept_node = $callback($node,$query);
+   if($concept_node!=NULL){
+  if($concept_node->teaser == $node->teaser){
+//concept didn't redefine the teaser so let's make sure we set it
+      $concept_node->teaser = node_teaser($concept_node->defn);
+    }
+  }
+}
+      }
+      return $concept_node;
+    }
+  
+   function _kentry_indexer($word, $vids, $cluster, $rank) {
+    if(!db_table_exists('kentry_index')){
+      db_query("CREATE TABLE `kentry_index` (
+ `word` varchar(255) NOT NULL default '',
+ `vids` text,
+ `updated` int(11) default NULL,
+ `clusters` text,
+ `ranks` text,
+ PRIMARY KEY  (`word`),
+  KEY `updated` (`updated`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8");
+       _dprint('kentry_index table created');
+      }
+      db_query("INSERT INTO {kentry_index}(word, vids, clusters, ranks, updated)
+      VALUES('%s', '%s', '%s', '%s', %d)
+       ON DUPLICATE KEY UPDATE
+       vids=CONCAT_WS(',', vids, '%s'),
+       clusters=CONCAT_WS(',', clusters, '%s'),
+       ranks=CONCAT_WS(',', ranks, '%s'),
+       updated=%d",
+       $word, $vids, $cluster, $rank, time(),
+       $vids,  $cluster, $rank, time());
+    }
+   
+/**
+ * Run some reports
+ */
+function kentry_cron() {
+  _kentry_send_report('search');
+  _kentry_send_report('content');
+}
+
+function _kentry_send_report($report) {
+  include_once('kentry.admin.inc');
+  switch($report) {
+    case 'search':
+      _kentry_report_searches();
+      break;
+    case 'content':
+      _kentry_report_content();
+      break;
+   }
+}
+ 
+function _kentry_values_form($node){
+  $node->iso = empty($node->iso)?substr($node->type, 7):$node->iso;
+  $form = array('chn'=>array('#tree'=>1));
+  $q = db_query("SELECT * FROM {kentry_fields} WHERE iso='%s'
+      ORDER BY category, weight, name", $node->iso);
+  while($r = db_fetch_object($q)) {
+    $r->value = $node->chn[$r->kfid]->value;
+    $r->nid = $node->nid;
+    $handler = _kfield_handler($r);
+    $form['chn'][$r->kfid] = $handler->form;
+  }
+  return $form;
+}
+    
+function _kentry_values($node) {
+  static $chn;
+  if(!isset($chn[$node->vid])) {
+    //First check the native cache
+    if($node->cached && is_array($node->chn) &&
+    is_object(array_pop($node->chn))) {
+      $chn[$node->vid] = $node->chn;
+    }else {
+      $result = db_query('SELECT f.*, v.value
+        FROM {kentry_fields} f
+        INNER JOIN {kentry_values} v ON f.kfid = v.kfid
+        WHERE v.vid = %d
+        ORDER BY f.category, f.weight, f.name', $node->vid);
+      $chn[$node->vid] = array();
+      while ($child = db_fetch_object($result)) {
+        $chn[$node->vid][$child->kfid]= $child;
+      }
+    }
+  }
+  return $chn[$node->vid];
+}
+    
+   /**
+   * Display the teaser of the node (or definition field if kentry node)
+   */
+    function _gallery_of_notes($node, $page=FALSE){
+      $variants = '';
+      $css = ((drupal_add_css(drupal_get_path('module', 'kentry').
+      '/kentry.css')));
+      unset($css['all']['theme']);
+      $output = "";
+     
+      //If the node has been migrated, use that one instead
+      if(is_array($node->chn)){
+ foreach($node->chn as $kfid=>$values){
+      $val = _kfield_view($values, $page, $node);
+      if(trim($val) && ($values->kfid !=
+  variable_get('xspf_'.$node->type.'_thumb', ''))) {
+  $variants .= "<div class='kfield'
+     title='$values->label'><label>".(t($values->label).' ').
+      "</label><span class='$values->name'>".$val."</span></div>";
+     }
+ }
+      }
+     $output.= ' <span class="fields vcard">';
+     $output.= '  '.t('View all !group entries',
+ array('!group'=>l($node->word, 'browse/'.$node->iso.'/'.$node->word,
+      array('absolute'=>1,
+    'attributes'=>
+  array('target'=>variable_get('iframe_target', '_kDP'),
+'title'=>t('Other entries like !lexeme',
+      array('!lexeme'=>$node->title))
+  )))));
+      $output.='  </span>';
+      $output.= $variants;
+      // build playlist
+      return $output;
+    }
+    
+    /**
+     * Update the cache of a node. Use this function to take care of all cache
+     * updates
+     * When a node is updated, clear the cache of all related nodes as well
+    */
+    function _kentry_update_cache($node){
+     // Very slow DELETEs.
+      if(isset($node->lexeme)){
+     cache_clear_all("kentry_page_rows:$node->lexeme#$node->iso", 'cache', 1);
+     }else{
+      cache_clear_all("kentry_page_rows:$node->word#$node->iso", 'cache', 1);
+     }
+     cache_clear_all("kentry:$node->vid", 'cache');
+     //Also clear the link cache
+     db_query("UPDATE {kentry} SET `index`='' WHERE vid=%d LIMIT 1", $node->vid);
+     //And touch the node for reindexing
+     $touch = 'search_touch_node';
+     if(function_exists($touch)) {
+       $touch($node->nid);
+     }
+    }
+   
+function _kentry_to_appengine($node) {
+  global $conf;
+  $service = $conf['service_name'];
+  if(!$service) {
+   return '<h2>Ask the webmaster to configure the service name for this site</h2>';
+  }
+  drupal_set_title(t('Instantly index %s', array('%s' => $node->title)));
+      $server = variable_get('kdevel_sync_server', '');
+      if($server && function_exists('_sanitize_node')) {
+        drupal_set_message(xmlrpc($server, 'app.cleanup_entry', $node->nid, $service?$service:$conf['service_name']));
+        $nodes[] = _sanitize_node($node);
+        $result = xmlrpc($server, 'app.import_entries', $nodes, $service);
+        if($result) {
+          return (sprintf('Updated AppEngine index on %s for service <i>%s</i>.<br/>%s.<pre>%s</pre>', 
+                          $server, $service, $result, print_r($nodes, 1)));
+        }else {
+          return (sprintf('Updating AppEngine index on %s failed with error: %s',
+                           $server, xmlrpc_error_msg()));
+        }
+      }else{
+    drupal_set_message('Indexing requires the kasahorow Services module and a valid sync server', 'error');
+    $output.= drupal_get_form('_sync_server');
+    if(!module_exists('kservices')) {
+      module_enable(array('kservices'));
+      drupal_set_message(t('Enabled the kasahorow Services module!'));
+    }
+    return $output;
+  }
+} 
+
+function _sync_server() {
+    $form['kdevel_sync_server'] = array('#type' => 'textfield', 
+      '#description' => 'XMLRPC server to send index to',
+      '#default_value' => variable_get('kdevel_sync_server', ''));
+    return system_settings_form($form); 
+
+}
+   /**
+     * Client-side caching
+     * TODO (paakwesi) : Use a combination of cookies,Javascript, Google Gears
+     * to set and retrieve items from the user's browser.
+     * @args:
+     *  $cache_path : Cache key using the Drupal convention (see cache_set())
+   */
+    function _kclient_cache($cid=''){
+      return NULL; //For now do nothing
+    
+      //TODO(paakwesi) : Clean this up
+      list($prefix, $suffix) = split(':', $cid);
+      switch($prefix){
+case 'kentry':
+  //$cached_node = $_COOKIE[$cid];
+  if($cached_node) {
+    return unserialize($cached_node);
+  }else {
+    return NULL;
+  }
+  break;
+case 'kentry_page_rows':
+  break;
+      }
+      $node = new stdClass();
+      $node->type = 'kentry_ak';
+      $node->title = 'Test item';
+      $node->iso = 'ak';
+      $node->nid = 1;
+      $node->vid = 1;
+      $node->status = 1;
+     
+      $node->uid = 1;
+      $node->name = 'The Man';
+      $object = new stdClass();
+      $object->data['pager_page_array'][0] = 0;
+      $object->data['pager_total'][0] = 3;
+      $object->data['pager_total_items'][0] = 21;
+     
+      $object->header = array('db'=>$object->iso);
+      $object->data['rows'] = array_pad(array(), 10, $node);
+      //print_r($object->data); exit;
+      if($_COOKIE['kwnode']){
+$object->hit = 1;
+      }
+      return $object;
+    }
+    
+    /**
+     * Reference: http://drupal.org/node/37767
+     */
+    function _knode_sibling($node, $dir = 'next', $next_node_text=NULL,
+  $prepend_text=NULL, $append_text=NULL, $tid = FALSE) {
+if($tid){
+//TODO(paakwesi):Optimize the query further by providing a fixed
+//query range (e.g. nid> 1 and nid<40) so that a full table scan is avoided
+$query = 'SELECT n.nid, n.title FROM {node} n '.
+ 'INNER JOIN {term_node} tn ON n.nid=tn.nid WHERE '.
+ 'n.nid ' . ($dir == 'previous' ? '<' : '>').
+ ' %d AND n.type = "%s" AND n.status=1 '.
+ 'AND tn.tid = %d ORDER BY n.nid '.
+ ($dir == 'previous' ? 'DESC' : 'ASC').' LIMIT 1';
+$result = db_query($query, $node->nid, $node->type, $tid);
+      }else{
+$query = 'SELECT n.nid, n.title FROM {node} n WHERE '.
+ 'n.nid ' . ($dir == 'previous' ? '<' : '>').
+ ' %d AND n.type = "%s" AND n.status=1 '.
+ 'ORDER BY n.nid '.
+ ($dir == 'previous' ? 'DESC' : 'ASC').' LIMIT 1';
+$result = db_query($query, $node->nid, $node->type);
+      }
+      if($row = db_fetch_object($result)){
+$text = $next_node_text ? $next_node_text : $row->title;
+     return array(
+      'title' => $text,
+ 'href' => 'node/'.$row->nid,
+ 'attributes' => array('title' => t('!pre !title !post',
+      array('!pre' => $prepend_text,
+     '!title' => $row->title,
+    '!post' => $append_text)
+      ),
+  'rel' => $dir,
+  'class' => substr($dir, 0, 4)     
+ ),
+     'query' => 'utm_medium=link&utm_source=self&utm_campaign=ksibling'.$dir
+       );
+    }else
+  return NULL;
+}  
+
+/**
+ * Generates editors of a 
+ * particular language
+ * TODO: Clean it up into a themeable function
+ */
+function getEditors($iso){
+    $names = array();
+    $editors = db_result(db_query( "SELECT editor FROM 
+ {kdictionary} WHERE iso='%s'",
+ $iso
+));    
+     
+    $editors = unserialize( $editors);
+    if(is_array($editors)){
+      foreach($editors as $editor){
+  if($editor){
+      $names[$editor] = l(_kw_account_name($editor), "user/$editor");
+  }
+      }
+      if(is_array($names) && count($names)){
+      return join($names, ', ');
+      }
+    }else{
+      return l(t('Apply to maintain the !name database!', array('!name'=>_name($iso))), 'contact');
+    }
+}
+   
+
+function _kdatabases($enabled=FALSE){
+   if($enabled){$where = " WHERE status > 0"; }  
+      $langs = array();
+  $result = db_query("SELECT iso, name FROM {kdictionary}".$where);    
+  while( $lang = db_fetch_object($result)){
+       $langs[$lang->iso] = $lang->name;
+  }
+  return $langs;
+}
+
+  
+  /**
+   * getStatus- query's the db for 
+   * the status of the selected language
+   */
+   function getStatus( $lang ) {
+      $result = db_query( "SELECT status FROM {kdictionary}
+     		       WHERE name='%s'",$lang
+     		     );
+      while( $status = db_fetch_object($result)){
+      	$stat[] = $status->status;
+      }
+      return $stat;
+   }
+   
+   /**
+    * _getUsers-query's the db for 
+    * registered users
+    */
+   function _getUsers(){
+     
+     //we need to select only users who have 'edit dictionary' permissions
+    $roles = variable_get("kdictionary_editor_roles", array(0));
+	
+	//list all users with 'edit dictionary' permissions
+	$result = db_query("SELECT u.uid, u.name FROM {users} u INNER JOIN {users_roles} ur ON u.uid=ur.uid WHERE rid= %s", join($roles, " OR rid="));
+	
+     while( $name = db_fetch_object( $result ) ){
+     	$names[$name->uid] = $name->name;
+     }
+     
+     return $names;
+     
+   }
+   
+   /**
+    * _getUsersId - query's the db for editor role uids
+    * @return array(uid=>username)
+    * 
+    */
+   function _getUsersId() {
+     // $result = db_query("SELECT uid FROM {users}"      );
+       
+       //we need to select only users who have 'edit dictionary' permissions
+    
+    $roles = variable_get("kdictionary_editor_roles", array(0));
+	
+	//list all users with 'edit dictionary' permissions
+	$result = db_query("SELECT u.uid, u.name FROM {users} u INNER JOIN {users_roles} ur ON u.uid=ur.uid WHERE rid= %s", join($roles, " OR rid="));
+	  $users = array();
+      while($user = db_fetch_object( $result )) {
+    	 $users[$user->uid] = _kw_account_name($user->uid);//$user->name;
+    	 
+      }
+      return $users;
+   }
+
+/**
+ *Return TRUE if this user is an editor for this language or has administer dictionary perms
+ */
+  function _is_lang_editor($uid, $nodetype){
+  	$editors = db_result(db_query( "SELECT editor FROM 
+      		      {kdictionary} WHERE iso='%s'",
+      		      substr($nodetype, 7)
+      		     ));    
+       
+      $editors = is_string($editors)?unserialize( $editors):array(); 
+      if(is_array($editors)){
+      	return (in_array($uid, $editors));
+      } else {
+      	return user_access('administer dictionary');
+      }
+  }
+  
+  function _dictionary_info($iso) {  	
+  	$dict = db_fetch_object(db_query("SELECT * FROM {kdictionary} WHERE iso = '%s'",$iso));
+  	drupal_set_title($dict->name);
+  	$output = check_markup($dict->instruction);
+	return $output; 
+  }
+
+/**
+ * 
+ * 
+ */
+function _available_dicts($iso=NULL, $start='',$status=NULL) {
+   global $kasa; 
+   if($_GET['wg'] == '1'){//Sort relative priorities
+      $output = "<div class='title'>".
+    t('modify display order of entries clustered with %group',
+      array('%group'=>$start))."</div>";
+      $output.= "<div>".
+    t('If you have JavaScript enabled you can use the
+      <span style="cursor: crosshair;">cross-hair handle at the
+      beginning of each row</span> to move entries up or down to
+      reorder them')."</div>"; 
+      $output.= l(t('Return to %group', array('%group'=>$start)),
+  "browse/$iso/$start", array('html'=>TRUE));
+      $output.= drupal_get_form('kgrouping_form', $iso, $start);
+      $output .= theme('pager', NULL, $page_increment);
+      drupal_set_title($start." - " .drupal_get_title());
+      return $output;
+   } else if( $_GET['wg'] == '2' ) {
+      $output.= drupal_get_form('keditmultiple_form', $iso, $start);
+      $output .= theme('pager', NULL, $page_increment);
+      drupal_set_title($start." - " .drupal_get_title());
+      return $output;
+   }
+
+   $headers=array(t("Entry Type"), t('Synonyms'), t('Variations'),
+  t("Edited By"));
+   $rows = array(); 
+   $desc = '';
+	
+   //is it all the databases, or only 1 database?
+   if(!db_result(db_query("SELECT COUNT(*) FROM {kdictionary}
+  WHERE iso='%s'", strtolower($iso)))){
+      $q = db_query("SELECT * FROM {kdictionary}
+    WHERE status > 0 ORDER BY iso ASC");	
+      while($row = db_fetch_object($q)){
+ $rows[strtolower($row->iso)]= array(
+       'desc'=>$row->instruction,
+       'grammar'=>$row->vid,
+       'realname'=>$row->name,
+       'status'=>$row->status,
+       'link'=>l($row->name, 'browse/'.$row->iso),
+       'refs'=> _unserialize_to_string($row->index, 'index'),
+       'chn'=>_unserialize_to_string($row->children),
+       'eds'=> getEditors($row->iso)
+     );
+      }
+      //not an applicable database
+      return theme('available_dicts', $headers, $rows);
+     }else{		
+ if($iso!= NULL){
+    $dict = db_fetch_object(db_query("SELECT * FROM {kdictionary} WHERE iso = '%s'", $iso ));
+    $alphabet = $link = array();
+    $alphabet = unserialize($dict->alphabets);
+    $labels = unserialize($dict->labels);
+    $alphabets = l(t('Jump to !group',
+     array('!group' =>
+   (isset($labels['word']['title'])?
+$labels['word']['title']:''))),
+   'browse/'.$iso).' >> '; 
+    //get all the alphabets and display
+    if($alphabet != NULL){
+    foreach($alphabet as $weight=>$letter) {	
+    $letter = trim($letter, "'\" ");
+    $alphabets.= l($letter, 'browse/'.$iso.'/'.$letter,
+   array('query'=>'browse=1'))." ";	
+    }
+    }
+
+    if(module_exists('kentry')){
+$desc.= kentry_page($start, $status, $iso);
+    }else{
+    watchdog('kdictionary', t('kentry module needed to display entries page'), WATCHDOG_ERROR);
+    }
+
+    if(user_access('suggest entry')){//this perm is only available from the kentry module so will work only if the kentry module is enabled
+       $link[] = l(t('add new entry'), 'node/add/kentry-'.$iso, array('query'=>'destination=browse/'.$iso.''));
+    }
+    if(user_access('review entry') && $start!=''){
+       //$link[] = l(t('rank and cluster entries grouped with %group', array('%group'=>$start)), "browse/$iso/$start", array('query'=>'wg=1', 'html'=>TRUE));
+       $link[] = l(t('edit entries grouped with %group', array('%group'=>$start)), "browse/$iso/$start", array('query'=>'wg=2', 'html'=>TRUE));
+    }
+    $breadcrumb[] = l(t('Home'), '');
+    $breadcrumb[] = l(t('Browse'), 'browse');
+    drupal_set_breadcrumb($breadcrumb);
+    return theme('available_dicts', $iso, $alphabets, $desc, $link, $start, $status);
+ }  
+   }
+}
+
+/**
+ * Show dictionary info
+ */
+function theme_available_dicts($headers, $rows, $desc=NULL, $links=array(), $start=NULL, $status=NULL) {
+	drupal_add_css(drupal_get_path('module', 'kentry').'/kentry.css');
+	$output = $rest = '';
+	if(is_array($headers)){//no dictionary specified. show all
+		$rest = "<br style='clear:both'/>".t('More...');
+		foreach ($rows as $iso=>$dict) {
+			if(($dict['status'] == FEATURED_DATABASE)){			
+			$output.='<div class="dictionary" id="'.$iso.'">' .
+					'<div id="name">'.$dict['link'].'<span id="help">'.l(t('Help'), variable_get('kentry_help', 'http://kasahorow.com/help')).'</span>'.'</div>'.
+					'<div id="description">'.check_markup($dict['desc']).'</div>';
+			$output.= $dict['chn']!=""?('<label>'.t('Includes').'</label> '.'<span id="includes">'.$dict['chn'].'</span>'):'';
+if(trim($dict['eds'])){
+   $output.='<div id="editors"><label>'.t('Maintained by ').'</label> '.$dict['eds'].'</div>';								
+}
+$output.='</div>';
+			}else{
+    $chn = ($dict['chn'])?' ('.$dict['chn'].') ':'';
+    $rest.= '<div id="dictionary" id="'.$iso.'">'.$dict['link'].$chn. ', '.$dict['realname'].' '.(trim($dict['eds'])?t('by').' '.$dict['eds']:'').'</div>';
+			}
+		}
+	} else {
+		$view[] = l(t('all'), 'browse/'.arg(1));
+		if(module_exists('kentry')){
+			$view[] = l(_kentry_status(1), 'browse/'.arg(1).'/'.arg(2).'/1', array('html'=>TRUE));
+			$view[] = l(_kentry_status(-1), 'browse/'.arg(1).'/'.arg(2).'/-1', array('html'=>TRUE));
+			$view[] = l(_kentry_status(0), 'browse/'.arg(1).'/'.arg(2).'/0', array('html'=>TRUE));
+		}
+		$output.='<div class="fulldictionary" id="'.arg(1).'">' .
+					'<div id="intro">'._dictionary_info($headers).'</div>';
+		$output.='<div id="editors"><span class="label">'.t('Editors').'</span> '.getEditors($headers).'</div>'.
+					'<div id="name">'.$rows.'<span id="help">'.l(t('Help'), variable_get('kentry_help', 'http://kasahorow.com/help')).'</span>'.'</div>';			
+		$output.="<div id='restrict'>".t('Show').' '.join($view, ' | ')."</div>";
+$output.= !empty($links)?('<div id="restrict">'.'<span class="label">'.t('Editor actions').'</span> '.join($links, ' | ').'</div>'):'';
+if(module_exists('search')){
+  $output.='<div id="find">'.drupal_get_form('search_form',
+     NULL,  $start,
+variable_get('kw_default_search', 'node')).'</div>';
+}
+		$output.='<div id="desc">'.$desc.'</div>';		
+		$output.='</div>';
+	}
+	$output.=$rest;
+if($start!=NULL){
+    drupal_set_title($start." - " .drupal_get_title());
+}
+	return $output;
+}
+
+function _unserialize_to_string($serializedString, $type=''){ 
+    $chn = unserialize($serializedString); 
+    $chnlist = array();
+    //check again
+    $chn = is_array($chn)?$chn:unserialize($chn);   
+    
+    switch($type){
+case 'index':
+    foreach($chn as $child=>$type){
+$n = (object)$child;
+$n->type = "kentry_".$type;
+$chnlist[$child] = node_get_types('name', $n);
+    }
+    break;
+default:
+    foreach($chn as $child){
+$handler = (_handlers($child, '')); 
+$chnlist[]=$handler->form['#title'];
+    }
+    break;
+    }
+    return join(', ',$chnlist);
+}
+
+
+/**
+ * Define handlers for special properties of entries
+ * Default handler is 'sprintf'
+ * OBSOLETE?
+ */
+function _handlers($property, $value=''){
+    $handler = new StdClass();
+    list($type, $name, $label) = split('#>', $property);
+    $handler->name = $name;
+    if($type=='url'){$type='textfield'; }
+    $handler->form = array(
+  '#type'=>$type,
+  '#description'=>$name,
+  '#title'=>$label,
+  '#default_value'=>$value,
+  );
+    return $handler;
+}
+
+function _kfield_handler($field){
+    $handler = new StdClass();
+    $options = array();
+    $special = array('url', 'isbn', 'place', 'hidden');
+    if(in_array($field->ftype, $special)){
+$field->ftype='textfield';
+    }
+    if(in_array($field->ftype, array('date', 'datetime'))){
+    $field->value = array('day'=>date('j', $field->value),
+ 'month'=>date('n', $field->value),
+ 'year'=>date('Y', $field->value),
+ 'hour'=>date('G', $r->value),
+ 'minute'=>date('i', $r->value)
+ );    
+    }
+   if(in_array($field->ftype, array('select', 'list'))){
+      $available = db_result(db_query("SELECT options FROM {kentry_fields}
+       WHERE kfid=%d", $field->kfid));
+      $options = array(
+ '#options' => array_map('trim', split("[\n]", $available)),
+ '#multiple' => $field->ftype=='list'?1:0
+       );
+      $field->ftype = 'select';
+      if($options['#multiple']){
+ $field->value = unserialize($field->value);
+      }
+   }
+   if(trim($field->link)){
+      list($db, $rel) = split('\|', $field->link);
+      $linkinfo = t('Comma-separated entries in this field will be looked up
+    in the %db database to generate %link options for
+    confirmation !here. ',
+    array('%db'=>_name($db),
+'%link'=>variable_get('ksynset_'.
+      trim($rel).'_name', ''),
+'!here'=>l(t('here'), "node/$field->nid/relations"))
+    );
+   }
+    
+   $handler->form = array_merge($options, array(
+  '#type'=>$field->ftype,
+  '#description'=>$linkinfo.$field->explanation,
+  '#title'=>$field->label,
+  '#default_value'=>$field->value,
+  ));
+    return $handler;
+}
+
+/**
+ *Return the available field types that have handlers defined
+ */
+function _kfield_types(){
+  return array('textfield'=>t('Single-line text field'),
+       'textarea'=>t('Multi-line text field'),
+       'date'=>t('Date'),
+       'url'=>t('Url'),
+       'datetime'=>t('Date and time'),
+       'select' => t('Single selection'),
+       'list' => t('Multiple selection'),
+       'isbn' => t('10- or 13-digit ISBN of a book'),
+       'hidden' => t('Hidden field only'),
+       'place' => t('16-character place-code')
+       );
+}
+
+/**
+ *Implement new field types with hook_elements() here.
+ *
+ */
+function kentry_elements(){
+  return array(
+    'map'=> array(
+'#input'=>TRUE,
+'#process' => array('expand_map'),
+  ),
+    );
+}
+
+/**
+ *Expand a field to accept multiple values, e.g. lat/long, ranges
+ */
+function expand_map($element){
+    // Default to Western Region for lat/long
+    if (empty($element['#value'])) {
+      $element['#value'] = array('lat' => 4,
+      'long' => -2,
+      'elev' => 0,);
+    }
+    $element['#tree'] = TRUE;
+    
+    $order = $element['#value'];
+    // Output textfields for accepting longitude, latitude, and elevation
+    foreach ($order as $type=>$default) {
+      $prefix = "";
+      switch($type){
+case 'lat':
+    $prefix = t('Latitude');
+    break;
+case 'long':
+    $prefix = t('Longitude');
+    break;
+case 'elev':
+    $prefix = t('Elevation');
+    break;
+case 'min':
+  $prefix = t('Minimum');
+  break;
+case 'max':
+  $prefix = t('Maximum');
+  break;
+      }
+      $parents = $element['#parents'];
+      $parents[] = $type;
+      
+      $element[$type] = array(
+'#type' => 'textfield',
+'#size' => 5,
+'#field_prefix'=>$prefix,
+'#field_suffix'=>"&nbsp;&nbsp;&nbsp;",
+'#default_value' => $default,
+'#attributes' => $element['#attributes'],
+      );
+    }
+
+    return $element;
+}
+
+function theme_map($element){
+  return theme('form_element', $element, '<div class="container-inline">'. $element['#children'] .'</div>');
+}
+
+
+/**
+ *Format the field object for viewing
+ *The $teaser indicates whether the field is being viewed as part of a teaser
+ */
+function _kfield_view($field, $page=FALSE, $node=NULL){
+    global $user;
+    $type = $field->ftype;
+    $value = $field->value;
+    switch ($type) {
+case 'textarea':
+    return check_markup($value);
+case 'textfield':
+ return check_plain($value);
+case 'select': 
+case 'list':
+ $available = db_result(db_query("SELECT options FROM {kentry_fields}
+       WHERE kfid=%d", $field->kfid));
+ $options = array_map('trim', split("[\n]", $available));
+ if($type == 'select'){
+    $value = $options[$value];
+ }else{
+    $picked = array();
+    if(is_array($selected = unserialize($value))){
+       foreach($selected as $i){
+  $picked[$i] = $options[$i];
+       }
+    }
+    $value = join(', ', $picked);
+ }
+ return check_plain($value);
+case 'checkbox':
+  return check_plain($value);
+case 'url':
+  return '<a href="'. check_url($value) .'">'. check_plain($value) .'</a>';
+case 'hidden':
+    return '';//Do not show
+case 'date':
+case 'datetime':
+  if($type!='datetime'){
+    $format = substr(variable_get('date_format_short', 'm/d/Y - H:i'), 0, 5);  
+  }else{
+    $format = variable_get('date_format_short', 'm/d/Y - H:i');
+  }   
+  return format_date($value, 'custom', $format);
+  
+case 'list':
+  $values = split("[,\n\r]", $value);
+  $fields = array();
+  foreach ($values as $value) {
+    if ($value = trim($value)) {
+      $fields[] = $browse ? l($value, 'kfield/'. $field->name .'/'. $value) : check_plain($value);
+    }
+  }
+  return implode(', ', $fields);
+case 'isbn': //TODO (paakwesi): Move the viewer to kgallery.module
+ if(trim($value)){
+    return $value.'<script type="text/javascript"
+src="http://books.google.com/books/previewlib.js"></script>
+    <script type="text/javascript">
+    GBS_insertPreviewButtonPopup(\'ISBN:'.$value.'\');</script>';
+ }else{//do not show anything if there's no ISBN
+    return;
+ }
+case 'place':
+  if(trim($value)) {    
+    return $value;
+  }else{
+    return;
+  }
+  break;
+    }
+}
+
+
+/**
+ *
+ */
+function kgrouping_form($state, $iso, $start, $type="word"){
+   $form['#tree'] = TRUE;
+   if($type=="links"){
+       //$q = db_queryd("SELECT k.*, n.nid, n.title FROM {kentry_synonyms} k INNER JOIN {node} n ON k.vid=n.vid WHERE k.vid = '%d' AND relid LIKE '%s' ORDER BY grouping, priority", $iso, $start);
+       $q = db_query("SELECT k.*, n.nid, n.title FROM {node} n INNER JOIN {kentry_synonyms} k ON n.vid=k.svid WHERE k.vid = '%d' ORDER BY grouping, priority", $iso);
+       $delta = db_result(db_query("SELECT COUNT(n.nid) FROM {node} n INNER JOIN {kentry_synonyms} k ON n.vid=k.svid WHERE k.vid = '%d' ORDER BY grouping, priority", $iso));
+   }else{//default, "word"
+    $q = db_query("SELECT k.*, n.nid, n.title FROM {kentry} k
+  INNER JOIN {node} n ON k.vid=n.vid
+  WHERE iso LIKE '%s' AND word LIKE '%s'
+  ORDER BY grouping, priority", $iso, $start);
+    $delta = db_result(db_query("SELECT COUNT(n.nid) FROM {kentry} k INNER JOIN {node} n ON k.vid=n.vid WHERE iso LIKE '%s' AND word LIKE '%s' ORDER BY grouping, priority", $iso, $start));
+   }
+   while($r = db_fetch_object($q)){
+if($type=='links'){
+    $form[$r->svid]['grouping'] = array('#type'=>'weight', '#delta'=>ceil($delta/2), '#default_value'=>$r->grouping);
+    $form[$r->svid]['priority'] = array('#type'=>'weight', '#delta'=>10, '#default_value'=>$r->priority);
+    $form[$r->svid]['title'] = array('#value'=>l($r->title, "node/$r->nid"));
+    $term = taxonomy_get_term($r->partofspeech);
+    $form[$r->svid]['pos'] = array('#value'=>$term->name);
+    $form[$r->svid]['defn'] = array('#value'=>$r->defn);
+    $form[$r->svid]['type'] = array('#value'=>$type, '#type'=>'hidden');
+    $form[$r->svid]['vid'] = array('#value'=>$r->vid, '#type'=>'hidden');
+}else{
+    $form[$r->vid]['grouping'] = array('#type'=>'weight', '#delta'=>ceil($delta/2), '#default_value'=>$r->grouping);//array('#type'=>'hidden', '#value'=>$r->grouping);
+    $form[$r->vid]['priority'] = array('#type'=>'weight', '#delta'=>10, '#default_value'=>$r->priority);
+    $form[$r->vid]['title'] = array('#value'=>l($r->title, "node/$r->nid"));
+    $term = taxonomy_get_term($r->partofspeech);
+    $form[$r->vid]['pos'] = array('#value'=>$term->name);
+    $form[$r->vid]['defn'] = array('#value'=>$r->defn);
+}
+    }
+    
+    if (count($form) >2) {//at least 3 because  1 element, '#tree', has already been set
+$form['submit'] = array('#type' => 'submit', '#value' => t('Save'));
+//$form['group'] = array('#type' => 'button', '#value' => t('Create new group')); //TODO: Implement Javascript action to insert new group into table
+    }else{
+$form['noaction'] = array('#type'=>'fieldset', '#title'=>t('There are not enough entries to reorder ranks or clusters.'),
+  '#description'=>t('!return', 
+   array('!return'=>l(t('Return to %group', array('%group'=>$start)), "browse/$iso/$start", array('html'=>TRUE)))
+   )
+ );
+    }
+    
+    return $form;
+}
+
+function theme_kgrouping_form(&$form){
+    $header = array('', t('Entry'), t('Main Category'), t('Definition'), t('Rank'), t('Cluster'));
+    $rows = array();
+    drupal_add_tabledrag('kgrouping', 'order', 'sibling', 'priority-in-group');
+    foreach (element_children($form) as $i=>$key) {
+if (isset($form[$key]['pos'])){
+    $row = $grow = array('');
+    $row[] = drupal_render($form[$key]['title']);
+    $row[] = drupal_render($form[$key]['pos']);
+    $row[] = drupal_render($form[$key]['defn']);
+    // Add class to priority weight fields for drag and drop.
+    if(isset($form[$key]['priority'])){ 
+$form[$key]['priority']['#attributes']['class'] = 'priority-in-group';
+$row[] = drupal_render($form[$key]['priority']);
+    }
+    
+    if(isset($form[$key]['grouping'])){ 
+$form[$key]['grouping']['#attributes']['class'] = 'group-weight-'.$form[$key]['grouping']['#value'];
+$grow[] = $row[] = array('data'=>drupal_render($form[$key]['grouping']), 'colspan'=>4);
+    }
+    
+    $rows[] = array('data' => $row, 'class' => 'draggable');
+    if($i < count($groups)){
+      //  $rows[] = array('data' => $grow, 'class' => 'tabledrag-root draggable');
+    }
+}
+  }
+  $output = theme('table', $header, $rows, array('id' => 'kgrouping', 'width'=>'100%'));
+  $output .= drupal_render($form);
+  return $output;
+}
+
+function kgrouping_form_submit($state, &$values){
+    foreach($values['values'] as $vid=>$wp){
+if(count($wp)>1 && ($wp['type']=='links')){
+    db_query("UPDATE {kentry_synonyms} SET grouping=%d, priority=%d WHERE vid=%d AND svid=%d", $wp['grouping'], $wp['priority'], $wp['vid'], $vid);
+}else if(count($wp)>1){//default is 'word'
+    db_query("UPDATE {kentry} SET grouping=%d, priority=%d WHERE vid=%d", $wp['grouping'], $wp['priority'], $vid);
+}
+
+    }
+}
+
+/**
+ * Multiple entry form
+ */
+function keditmultiple_form($state, $iso, $start, $type="word"){
+  $langDetails = db_fetch_object(db_query("SELECT * FROM {kdictionary} WHERE status>0 AND iso='%s'", $iso));
+  $toDisplay = variable_get('kasahorow_entries_per_page', 10);
+  $form['#tree'] = TRUE;
+  if($type=="links"){
+      //$q = db_queryd("SELECT k.*, n.nid, n.title FROM {kentry_synonyms} k INNER JOIN {node} n ON k.vid=n.vid WHERE k.vid = '%d' AND relid LIKE '%s' ORDER BY grouping, priority", $iso, $start);
+      $q = db_query("SELECT k.*, n.nid, n.title FROM {node} n INNER JOIN {kentry_synonyms} k ON n.vid=k.svid WHERE k.vid = '%d' ORDER BY grouping, priority", $iso);
+      $delta = db_result(db_query("SELECT COUNT(n.nid) FROM {node} n INNER JOIN {kentry_synonyms} k ON n.vid=k.svid WHERE k.vid = '%d' ORDER BY grouping, priority", $iso));
+  }else{//default, "word"
+      $q = db_query("SELECT k.*, n.nid, n.title FROM {kentry} k
+    INNER JOIN {node} n ON k.vid=n.vid
+    WHERE iso LIKE '%s' AND word LIKE '%s'
+    ORDER BY grouping, priority
+    LIMIT %d,%d", $iso, $start, ($_GET['page']*$toDisplay),
+    $toDisplay);
+      $delta = db_result(db_query("SELECT COUNT(n.nid) FROM {kentry} k INNER JOIN {node} n ON k.vid=n.vid WHERE iso LIKE '%s' AND word LIKE '%s' ORDER BY grouping, priority", $iso, $start));
+  }
+    while($r = db_fetch_object($q)){
+if($type=='links'){
+    $form[$r->svid]['grouping'] = array('#type'=>'weight', '#delta'=>ceil($delta/2), '#default_value'=>$r->grouping);
+    $form[$r->svid]['priority'] = array('#type'=>'weight', '#delta'=>10, '#default_value'=>$r->priority);
+    $form[$r->svid]['title'] = array('#type'=>'textfield','#default_value'=>$r->title, '#size'=>20);
+    $form[$r->svid]['pos'] = taxonomy_form( $langDetails->vid,$r->partofspeech );
+    $form[$r->svid]['pos']['#title'] = '';
+    $form[$r->svid]['defn'] = array('#type'=>'textfield','#default_value'=>$r->defn);
+			$form[$r->svid]['notes'] = array('#type'=>'textfield', '#default_value'=>$r->notes);
+			$form[$r->svid]['example'] = array('#type'=>'textfield', '#default_value'=>$r->example);
+    $form[$r->svid]['type'] = array('#value'=>$type, '#type'=>'hidden');
+    $form[$r->svid]['vid'] = array('#value'=>$r->vid, '#type'=>'hidden');
+
+}else{
+    $form[$r->vid]['grouping'] = array('#type'=>'weight', '#delta'=>ceil($delta/2), '#default_value'=>$r->grouping);//array('#type'=>'hidden', '#value'=>$r->grouping);
+    $form[$r->vid]['priority'] = array('#type'=>'weight', '#delta'=>10, '#default_value'=>$r->priority);
+    $form[$r->vid]['title'] = array('#type'=>'textfield', '#default_value'=>$r->title, '#size'=>20 );
+    $form[$r->vid]['pos'] = taxonomy_form( $langDetails->vid,$r->partofspeech );
+    $form[$r->vid]['pos']['#title'] = '';
+    $form[$r->vid]['defn'] = array('#type'=>'textarea', '#default_value'=>$r->defn, '#cols'=>20 );
+			$form[$r->vid]['example'] = array( '#type' => 'textarea','#default_value' => $r->example, '#cols'=>20  );
+    $form[$r->vid]['notes'] = array( '#type' => 'textarea','#default_value' => $r->notes, '#cols'=>20  );
+}
+    }
+    
+    if (count($form) >2) {//at least 3 because  1 element, '#tree', has already been set
+$form['submit'] = array('#type' => 'submit', '#value' => t('Save'));
+    }else{
+$form['noaction'] = array('#type'=>'fieldset', '#title'=>t('There are not enough entries to reorder ranks or clusters.'),
+  '#description'=>t('!return', 
+  array('!return'=>l(t('Return to %group', 
+  array('%group'=>$start)), "browse/$iso/$start", 
+  array('html'=>TRUE)))));
+    }
+    $form['letter'] = array('#type' => 'value', '#value' => $start); 
+    $form['db'] = array('#type' => 'value', '#value' => $iso); 
+    $form['todisplay'] = array('#type' => 'value', '#value' => $toDisplay); 
+    return $form;
+}
+
+function theme_keditmultiple_form(&$form){
+  $header = array('', t('Entry'), t('Primary Category'), t('Definition'),
+  t('Examples'), t('Notes'), t('Rank'), t('Cluster'));
+  $rows = array();
+  drupal_add_tabledrag('keditmultiple', 'order', 'sibling', 'priority-in-group');
+  foreach (element_children($form) as $i=>$key) {
+    if (isset($form[$key]['pos'])){
+      $row = $grow = array('');
+      $row[] = drupal_render($form[$key]['title']);
+      $row[] = drupal_render($form[$key]['pos']);
+      $row[] = drupal_render($form[$key]['defn']);
+      $row[] = drupal_render( $form[$key]['example']);
+      $row[] = drupal_render( $form[$key]['notes']);
+      // Add class to priority weight fields for drag and drop.
+      if(isset($form[$key]['priority'])){ 
+$form[$key]['priority']['#attributes']['class'] = 'priority-in-group';
+  $row[] = drupal_render($form[$key]['priority']);
+}
+
+if(isset($form[$key]['grouping'])){ 
+  $form[$key]['grouping']['#attributes']['class'] = 'group-weight-'.$form[$key]['grouping']['#value'];
+  $grow[] = $row[] = array('data'=>drupal_render($form[$key]['grouping']), 'colspan'=>4);
+}
+
+$rows[] = array('data' => $row, 'class' => 'draggable');
+if($i < count($groups)){
+  //  $rows[] = array('data' => $grow, 'class' => 'tabledrag-root draggable');
+}
+    }
+  }
+  $output = theme('table', $header, $rows, array('id' => 'keditmultiple', 'width'=>'100%'));
+  $output .= drupal_render($form);
+  return $output;
+} 
+
+function keditmultiple_form_submit($state, &$values) {
+  foreach($values['values'] as $vid=>$wp){
+   if(count($wp)>1 && ($wp['type']=='links')){
+    db_query("UPDATE {kentry_synonyms} SET grouping=%d, priority=%d WHERE vid=%d AND svid=%d", $wp['grouping'], $wp['priority'], $wp['vid'], $vid);
+
+		}else if(count($wp)>1){//default is 'word'
+  db_query("UPDATE {kentry} SET partofspeech=%d, defn='%s',
+   example='%s', notes='%s', grouping=%d, priority=%d WHERE vid=%d",
+   $wp['pos'],$wp['defn'],$wp['example'], $wp['notes'],
+   $wp['grouping'], $wp['priority'], $vid);
+   
+  db_query("UPDATE {node} SET title='%s'
+    WHERE vid=%d", $wp['title'], $vid);
+  db_query("UPDATE {node_revisions} SET title='%s'
+    WHERE vid=%d", $wp['title'], $vid);
+  $fakenode = new stdClass();
+  $fakenode->vid = $vid;
+  _kentry_update_cache($fakenode);
+}
+    }
+    if(variable_get('kentry_page_v1', 1) == 3) {
+      drupal_set_message(t('Search index ranking will be updated
+  when the SphinxSearch index is rebuilt.'));
+    }
+} 
+ 
+
+/**
+ * Return the list of explicit (admin/content/kw/kentry) and
+ * inferred pairs (reversed) of all enabled dbs
+ * $lang - the interface language all strings shd be translated into
+ */
+function _kw_db_pairs($lang){
+    $pairs = array();
+    $q = db_query("SELECT iso, `index` FROM {kdictionary} WHERE status>0");
+    while($r = db_fetch_object($q)){
+$options = unserialize($r->index);
+$pairs[$r->iso.'|'] = t('From @from',
+array('@from'=>t(_kasahorow_entry_types($r->iso),
+ array(), $lang)
+     )
+);
+foreach($options as $option){
+    $pairs[$r->iso.'|'.$option] = t('@from to @to',
+array('@from'=>t(_kasahorow_entry_types($r->iso),
+ array(), $lang),
+      '@to'=>t(_kasahorow_entry_types($option),
+ array(), $lang)), $lang);
+    $pairs[$option.'|'.$r->iso] = t('@from to @to',
+array('@from'=>t(_kasahorow_entry_types($option),
+ array(), $lang),
+      '@to'=>t(_kasahorow_entry_types($r->iso),
+ array(), $lang)), $lang);
+}
+    }
+    return $pairs;
+}
+/**
+ * Implement a fie.nipa hook. Only called if the fie.nipa modules are implemented
+ * TODO(paakwesi): Break this up into events that don't take more than 10ms
+ * per function call
+ */
+function kentry_fnapi($op){
+  switch($op){
+    case 'cron':
+      $service = preg_replace('/[^a-z0-9]+/', '_',
+      strtolower(variable_get('site_name',
+      'fie.nipa Site')));
+      $expires = strtotime("next week");
+      $states = 'DATA_QUALITY_REPORT';
+      $donotnotify = 0;
+      $page = "";
+      $stall = db_result(db_query("SELECT uid FROM {users}
+  WHERE name LIKE '%s'",
+     variable_get('myfienipa_stall', 'fie.nipa')));
+      $dbnames = variable_get('kclient_db_names', array());
+      foreach($dbnames as $code=>$name){
+if(function_exists('_kget_reports')){
+  $logrows = _kget_reports($code);
+  $log = theme('table', array(t('Quality report for %name database',
+array('%name' => $name)),
+      t('Is'), t('Should be')), $logrows,
+       array('width'=>'100%'));
+}else{
+  watchdog('fnapi', '_kget_reports function does not exist!',
+   array(),  WATCHDOG_ERROR);
+  $log = 'Some log';
+}
+$editors = db_result(db_query( "SELECT editor FROM 
+ {kdictionary} WHERE iso='%s'", $code));    
+
+$editors = unserialize( $editors);
+$editors = is_array($editors)?$editors:array();
+//Notify each editor
+foreach($editors as $uid=>$link){
+  $server = variable_get("myfienipa_market", "http://fienipa.com");
+  $result = xmlrpc($server."/xmlrpc.php",
+   'flog.create.message',
+(int)$uid, (string)$states, (string)$service,
+(int)$expires, (bool)$donotnotify, 
+'kdictionary', (string)$log
+);
+  if ($result === FALSE) {
+    watchdog('fmonitor', 'Error %code: !message',
+     array('%code' => xmlrpc_errno(),
+   '!message' => xmlrpc_error_msg().' '.
+   l(t('Notify the administrator'),
+     'contact')), WATCHDOG_ERROR);
+  }else{
+    watchdog('fmonitor', 'Send alert at !url',
+     array('!url'=>url("$server/fn/log/alert/$result")));
+  }
+}
+      }
+    break;
+  }
+}
+
+function kentry_mail($key, &$message, $params){
+    $language = $message['language'];
+    $variables = user_mail_tokens($params['account'], $language);
+    switch($key){
+default:
+    $message['headers'] = $params['headers'];
+    $message['subject'] = $params['subject'];
+    $message['body'] = $params['message'];
+    break;
+    }
+}
+
+/**
+ * Return all databases
+ * Make the toolkits available a static var so we don't call the dbase every time
+ */
+function _kasahorow_entry_types( $iso=NULL, $enabled=TRUE, $refresh=FALSE) {
+    static $types;
+    $types = count($types)?$types:array();
+    if(!count($types) || $refresh){
+      if($iso!=NULL){
+ return db_result(db_query("SELECT name FROM {kdictionary}
+   WHERE iso='%s'", $iso));
+      }
+      $restrict = ($enabled)?"status>0":"1";
+      $q = "SELECT iso, name FROM {kdictionary}
+  WHERE $restrict ORDER BY name";  
+      $result = db_query( $q );  
+      while( $row = db_fetch_object( $result ) ){
+  $types[$row->iso] = $row->name;
+      }
+    }
+    return(!empty($types[$iso])?$types[$iso]:$types );  
+}
+
+
+/**
+ * Return the localized name of the database in the current locale
+ */
+function _name($iso){
+  if(isset($iso)){
+    $iso = str_replace('kentry_', '', $iso);
+    return t(_kasahorow_entry_types($iso));
+  }
+}
+
+
+function _kencode($string){
+  return strtr(strtolower($string), KENCODER_DICT, KDECODER_DICT);
+}
+
+function _kdecode($string){
+  return strtr(strtolower($string), KDECODER_DICT, KENCODER_DICT);
+}
+
+function _knum_to_code($num){
+  $sign = $num > 0 ? 0:1;
+  if($pos = strpos($num, '.')) {
+    $fraxn = '0'.substr($num, $pos);
+    $precision = base_convert((strlen($fraxn) - 2), 10, KENCODER_BASE);
+  }else{
+    $precision = $fraxn = 0;
+  }
+  $encoded = base_convert($num, 10, KENCODER_BASE);
+  
+  $translated = _kencode($sign.$encoded.$precision);
+  return $translated;
+}
+
+function _kcode_to_num($code){
+  $code = _kdecode($code);
+  $encoded_sign = substr($code, 0, 1);
+  $encoded_precision = substr($code, -1, 1);
+  $number = substr($code, 1, -1);
+  if($encoded_sign){
+    $sign = -1;
+  }else{
+    $sign = 1;
+  }
+  
+  $precision = pow(10, base_convert($encoded_precision, KENCODER_BASE, 10));
+  $decoded = $sign*base_convert($number, KENCODER_BASE, 10)/$precision;
+  return $decoded;
+}
+
+/**
+ * Given a lat/long pair, splice into a single mail-code
+ */
+function _klatlong_to_placecode($latlong){
+  $tmp = split(',', $latlong);
+  $lat = _knum_to_code($tmp[0]);
+  $long = _knum_to_code($tmp[1]);
+  if(strlen($lat) < 8){
+    $lat = str_pad($lat, 8, '1');
+  }
+  if(strlen($long) < 8){
+    $long = str_pad($long, 8, '1');
+  }
+  $lat_components = str_split($lat);
+  $long_components = str_split($long);
+  for($i=0; $i < count($lat_components); $i++){
+    $mc[] = $lat_components[$i];
+    $mc[] = $long_components[$i];
+  }
+  $place_code = join('', $mc);
+  return $place_code;
+}
+
+/**
+ *Given a mail code, split into a lat/long of appropriate precision
+ */
+function _kplacecode_to_latlong($encoded) {
+  $tmp = str_split($encoded);
+  $lat = $long = '';
+  foreach($tmp as $k => $v){
+    if($k%2){
+      $long.=$v;
+    }else{
+      $lat.=$v;
+    }
+  }
+  $lat = _kcode_to_num(str_ireplace('1', '', $lat));
+  $long = _kcode_to_num(str_ireplace('1', '', $long));
+  return "$lat,$long";
+}
+
+function _kfield_google_maps_key(){
+  global $base_url;
+  $parts = parse_url($base_url);
+  switch($parts['host']){
+    case 'localhost':
+      $key = 'ABQIAAAAIUZMC1wtGIxyZAYLr8h5oRT2yXp_ZAY8_ufC3CFXhHIE1Nvwkx'.
+     'TIJibTAW_e4zAlanlwUwXoQ46p-w';
+      break;
+    case 'fienipa.com':
+      $key = 'ABQIAAAAIUZMC1wtGIxyZAYLr8h5oRQtH8d6UIQ4JYsNxAcOrVD2eO6EdRSy'.
+     'cPD-nxOoSFXCfgo5PA4AEoqqOw';
+      break;
+    case 'property.fienipa.com':
+      $key = 'ABQIAAAAIUZMC1wtGIxyZAYLr8h5oRTjO7Ot3ZbrUSS2WYU8jIYjvAOffBQz'.
+     'BJb0EDMkN7PVZQGZhhgPLJaN8w';
+      break;
+    case 'places.fienipa.com':
+      $key = 'ABQIAAAAIUZMC1wtGIxyZAYLr8h5oRR9TpurKcbNC3T1iUtLBZ7ssUwiChRIF'.
+     'EfSin8tPAirbafjPWhJXfYC_w';
+      break;
+    case 'ghanapropertymarket.com':
+      $key = 'ABQIAAAAIUZMC1wtGIxyZAYLr8h5oRQEUNpQgFgxJOXK02vZdCSnD6ezOxQ2u'.
+     '_9DwzIS09WFkIVo81eIlXqc8Q';
+      break;
+    case 'nududu.com':
+      $key = 'ABQIAAAAIUZMC1wtGIxyZAYLr8h5oRSSg77Gvi3NEawFwhSKNYzzV0neHhTe'.
+     'ZleLNw1iHRX00jCFV0GN-sUW6w';
+      break;
+    case 'food.fienipa.com':
+      $key = 'ABQIAAAAIUZMC1wtGIxyZAYLr8h5oRS3B9NPQBRi5QfqzzwINUCReH5yQRTDj6U'.
+     '4oyoyP0dwVlF4Qr3NsQ0RPA';
+      break;
+    case 'market.fienipa.com':
+      $key = 'ABQIAAAAIUZMC1wtGIxyZAYLr8h5oRTZM-4Uq-hZxGTbi7d34tswD2MrcxRed-'.
+     'Oj30UY9LSegBvxKSMnPI2qIw';
+      break;
+    case 'houses.fienipa.com':
+      $key = 'ABQIAAAAIUZMC1wtGIxyZAYLr8h5oRQUQd34fYdQO2XYgK_cBgvxrCyGsRTtOHN'.
+      'sENier3_OYIo0K-_5r-NesA';
+      break;
+  }
+  return $key;
+}
+
+function _kdatabase_field_filtertypes($filtertype=NULL){
+  $filters = array(
+    0 => t('No filter on this field'),
+    'textfield' => t('Exact value'),
+    'map' => t('Minimum-Maximum range')
+  );
+  return $filters[$filtertype]?$filters[$filtertype]:$filters;
+}
+
+/**
+ * 
+ * @param $type
+ * @return node_type
+ */
+function _kentry_create_type($type){
+  $type = (object)$type;  
+  db_query('INSERT INTO {kdictionary}(iso, name, status, created) 
+  			VALUES("%s", "%s", %d, %d)', $type->iso, $type->name, 1, time());
+  node_types_rebuild();
+  return 'kentry_'.$type->iso;
+}
+
+/**
+ *Get the number of entries to sync for this client
+ * TODO(paakwesi): Depend on search_dataset instead!
+ */
+function _kentry_num_to_sync($client) {
+  $db = new KDatabase('search_dataset');
+  $row = $db->RetrieveRow(array(
+      'cols' => array('COUNT((sid)) as total'),
+      'wheres' => array('reindex > 0'),
+       )
+      );
+  return $row->total;
+}
+
+/**
+ *Sync $limit kentries for this client
+ *Returns kentries that have been synced
+ */
+function _kentry_sync($client, $limit=10) {
+  $entries = array();
+  //Max number of entries to sync
+  $db = new KDatabase('search_dataset');
+  $rows = $db->RetrieveRows(array(
+      'cols' => array('sid as nid'),
+      'wheres' => array('reindex > 0'),
+      'limit' => $limit, 
+       ));
+  foreach($rows as $row) {
+    $entry = node_load($row->nid);
+    $entries[] = $entry;
+  }
+  # Now sync these entries
+  if (function_exists('search_cron')) {
+    search_cron();
+  }
+  return $entries;
+}
+
+/**
+ *Which entries have been updated since a particular time
+ */
+function _kentry_updated_since($timestamp, $limit=10) {
+  $db = new KDatabase('kentry');
+  $rows = $db->RetrieveRows(
+    array('cols' => array('vid'),
+          'wheres' => array(
+                            sprintf('updated >= %d', $timestamp)),
+          'order' => array('vid', 'updated'),
+          'limit' => $limit,
+                            ));
+  return $rows;
+}
+
+function _kentry_add_link($fromnode, $tonode, $relid, $user=null) {
+  if(!$user) {
+    global $user;
+  }
+  $create = db_query("INSERT IGNORE {kentry_synonyms}
+                      (vid, svid, iso, relid, uid, updated)
+                      VALUES (%d, %d, '%s', '%s', %d, %d)",
+                      $fromnode->vid, $tonode->vid, $tonode->iso, $relid, $user->uid, time());
+  return $create;
+}
+
+function _kentry_field_save($kfid, $vid, $value) {
+  $status = @db_query("INSERT INTO {kentry_values}(value,vid,kfid) VALUES('%s', %d, %d)",
+                      $value, $vid, $kfid);
+  if(!$status) {
+    $status = db_query("UPDATE {kentry_values} SET value='%s' WHERE vid=%d AND kfid=%d",
+              $value, $vid, $kfid);
+  }
+  return $status;
+}
+

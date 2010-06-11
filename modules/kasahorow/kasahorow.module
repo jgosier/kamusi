@@ -1,0 +1,435 @@
+<?php
+/**
+ * @mainpage
+ * kasahorow Tools
+ * Implements the Drupal hooks used/defined by the kasahorow Tools 
+ * 
+ * The top-level logic is defined here.
+ * @group Menu
+ * The administration menu system is defined globally so that each module's
+ * administration
+ * settings are available from one location. Each component of the kasahorow
+ * system introduces a top-level admin tab defined by a path of the form 
+ * admin/content/kw/functionality, where "functionality" is a name of the main
+ * functionality contributed by that component's modules.
+ * 
+ * @group Display
+ * Each module may define a kasahorow hook by which they may interact with
+ * other modules to display their contributions to that module's display view.
+ * The hook will be of the form hook_kwapi(@args)
+ */
+define('KASAHOROW_PATH', drupal_get_path('module', 'kasahorow'));
+define('KW_VERSION', 0.954);
+require_once('./includes/database.fnsql.inc');
+
+function kasahorow_help($section = "") {
+  switch ($section) {
+    case 'admin/modules#description':
+      return t('Defines a set of aids for structured content publishing.');
+    case 'admin/cpanel':         	
+    	$intro = <<<INTRO
+The kasahorow toolkit is a set of publishing tools built with African content
+in mind. <br />
+<h3>Getting started</h3>
+<ol>
+<li>Install some of the other modules from the kasahorow Tools package on the
+<a href='?q=admin/build/modules&destination=admin/content/kw'>Drupal modules
+page</a>
+</li>
+</ol>		
+INTRO;
+	$output = t($intro);
+    return $output;
+  }
+}
+
+function kasahorow_menu() {
+  $items['kw/home'] = array(
+    'title' => t('Home'), 
+    'page callback' => '_kw_home',
+    'access arguments' => array('access content'),
+    'type' =>MENU_CALLBACK , 
+    'weight' => 0
+  );
+  $items['admin/content/kw'] = array(
+    'title' => t('kasahorow Tools'),
+    'description' => 'Content publishing aids by kasahorow',
+    'page callback' => '_kw_admin_home',
+    'access arguments' => array('access administration pages'),
+    'type' => MENU_NORMAL_ITEM , 
+    'weight' => 0
+  );
+  $items['admin/content/kw/view'] = array(
+    'title' => t('Control Panel'), 
+    'page callback' => '_kw_admin_home',
+    'access arguments' => array('access administration pages'),
+    'type' => MENU_DEFAULT_LOCAL_TASK , 
+    'weight' => -2
+  );
+  $items['admin/content/kw/settings'] = array(
+    'title' => t('Global Settings'), 
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('kasahorow_admin_settings'),
+    'access arguments' => array('access administration pages'),
+    'type' => MENU_LOCAL_TASK, 
+    'weight' => 0
+  );
+  $items['node/%node/kasahorow.js'] = array(
+    'title' => t('Javascript to generate embedded kasahorow node'),
+    'type' => MENU_CALLBACK,
+    'page callback' => '_kasahorow_embed',
+    'page arguments' => array(1),
+    'access arguments' => array('access content'),
+  );
+  return $items;                   
+}
+
+/**
+ * Define global settings
+ */
+function kasahorow_admin_settings() {
+  $form['kw_default_search'] = array('#type'=> 'select',
+    '#title' => t("Default search"),
+    '#options' => array_combine(module_implements('search'),
+        module_implements('search')),
+    '#collapsible' => TRUE,
+    '#description' => t('Default search type on kasahorow home page:
+        !link', array('!link' => l('View', 'kw/home'))),
+    '#default_value' => variable_get('kw_default_search', 'node')
+  );
+  
+  $form['user'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('User settings'),
+    '#collapsible' => TRUE
+  );
+  // Compile a list of fields to show
+  $fields = array('name' => t('user name'), 'mail' => 'user email');
+  if (module_exists('profile')) {
+    $result = db_query('SELECT name, title, weight, visibility
+                       FROM {profile_fields} WHERE visibility IN (%d, %d)
+                       ORDER BY weight', PROFILE_PUBLIC,
+                       PROFILE_PUBLIC_LISTINGS);
+    while ($record = db_fetch_object($result)) {
+      $fields[$record->name] = $record->title;
+    }
+  }    
+  $form['user']['kw_account_profile'] = array('#type' => 'checkboxes',
+    '#title' => t('Profile fields to display'),
+    '#default_value' => variable_get('kw_account_profile', NULL),
+    '#options' => $fields,
+    '#description' => t('Select which profile fields you wish to display
+                        in the block. Only fields designated as public in
+                        the <a href="!profile-admin">profile field
+                        configuration</a> are available. To change the
+                        order of appearance, change the weights on
+                        the <a href="!profile-admin">profile settings</a>
+                        page', array('!profile-admin' =>
+                                     url('admin/user/profile'))),
+  );
+  return system_settings_form($form);
+}
+
+/**
+ * hook_theme
+ */
+function kasahorow_theme() {
+  return array(
+    'kw_cpanel' => array('arguments' => NULL),
+    'kasahorow_embed' => array(
+        'arguments' => array('node' => NULL)),
+    'datetime' => array(
+        'arguments' => array('element' => NULL)),
+    'kw_home' => array('arguments' => NULL),
+  );
+}
+
+
+/**
+* Implementation of hook_element
+*/
+function kasahorow_elements() {
+  $type['datetime'] = array(
+    '#theme' => 'theme_date',
+    '#input' => TRUE,
+    '#process' => array('expand_date',
+                        'expand_time'),
+    '#element_validate' => array('date_validate')
+  );
+  return $type;
+}
+
+function theme_datetime($element) {
+  return theme('date', $element);
+}
+
+/**
+ *Return version information
+ */
+function kasahorow_xmlrpc() {
+  return array(
+      array(
+          'kasahorow.version',
+          '_get_kw_version',
+          array('int'),
+          t('Get the current kasahorow version')
+      )
+  );
+}
+
+
+//Helper functions
+/**
+ * The main kasahorow control panel
+ */
+function _kw_admin_home(){
+  return _kw_cpanel();
+} 
+
+/**
+ * Provide another page where the default node listing is available in case
+ * page-front.tpl.php is used to override the default
+ * front page node listing
+ */
+function _kw_home(){
+    return theme('kw_home');
+}
+
+/**
+ * Provide a default page with a search bar at the top,
+ * recent entries on the left, most popular on the right
+ * TODO: sort out dependencies--this depends on statistics.module
+ * being installed
+ */
+function theme_kw_home(){
+  global $base_url, $user;
+  drupal_set_title(variable_get('site_slogan', t('Home')));
+  drupal_add_css(drupal_get_path('module', 'kdictionary').
+      '/kdictionary.css');
+  jquery_ui_add('ui.core');
+  jquery_ui_add('ui.tabs');
+  drupal_add_js("$(document).ready(function(){
+                $('#kw_home > ul').tabs();
+                });", 'inline');
+  $top = drupal_get_form('search_form', NULL, '',
+      variable_get('kw_default_search', 'node'));
+  
+  $output = "<div id='kw_home'>";
+  $output.="<div class='kw_top'>$top</div>";
+  $output.= "<ul class='kw_home_menu tabs'>
+  <li><a href='#kw_nodes'><span>".t('Home')."</span></a></li>
+  <li><a href='#kw_favs'><span>".t('My favorites')."</span></a></li>
+  <li><a href='#kw_add'><span>".t('Add new content')."</span></a></li>
+  </ul><br style='clear:both;' />";
+  
+  $result = db_query(db_rewrite_sql('SELECT n.*
+      FROM {node} n WHERE n.promote = 1 AND n.status = 1
+      ORDER BY n.sticky DESC, n.created DESC LIMIT %d'),
+          variable_get('default_nodes_main', 10));
+
+  
+  $left.= node_title_list($result, t('Just added:'));
+
+  $feed_url = url('rss.xml', array('absolute' => TRUE));
+  drupal_add_feed($feed_url, variable_get('site_name', 'Drupal') .' '.
+      t('RSS'));
+
+  $right = "";
+  if (($result = statistics_title_list('totalcount',
+          variable_get('default_nodes_main', 10))) &&
+      ($node_title_list = node_title_list($result, t('All time:')))) {
+    $right = $node_title_list;
+  }
+  $output.= "<div class='kw_body' id='kw_nodes'>
+      <div class='kw_left'>$left</div>
+      <div class='kw_right'>$right</div>
+      <br style='clear:both;' />
+      </div>
+      ";
+
+  $output.= "<div class='kw_body' id='kw_favs'>".
+      theme('my_kw', $user).
+      "<br style='clear:both;' />
+      </div>
+      ";
+  
+  include_once(drupal_get_path('module', 'node').'/node.pages.inc');
+  $item = menu_get_item('node/add');
+  $content = system_admin_menu_block($item);
+  $node_add_list = theme('node_add_list', $content);
+  $output.= "<div class='kw_body' id='kw_add'>".
+      l(t('Login to create more content'), 'user',
+        array('query'=>'destination=node/add')).$node_add_list.
+      "<br style='clear:both;' />
+      </div>
+      ";
+  $output.="</div>";
+  
+  return $output;
+}
+
+
+function _cpanel_version(){
+    $path = url().drupal_get_path('module', 'kasahorow')."/kincludes";
+    return "<div align='right'><img src='$path/kasahorow_logo.png' /><br />".
+      t('Version %ver', array('%ver'=>KW_VERSION))."</div>";
+}
+
+function _get_kw_version(){
+    watchdog("kwversion", "Checked kasahorow version");
+    return KW_VERSION;
+}
+
+/**
+ * The kasahorow control panel
+ */
+function _kw_cpanel(){
+  $output = '';
+  $output.= _cpanel_version();	
+  $output.= kasahorow_help('admin/cpanel');
+  $kasa = new stdClass();
+  $rows = array();
+  $header = array(t('Module'), t('Description'), '');
+  
+  //Show what modules are available, and which languages they
+  //implement functionality for
+  $admins = kasahorow_invoke_kwapi($kasa, 'admin');	
+  foreach($admins as $key=>$value){
+    if(is_array($value)){//Proper value returned
+      $rows[$key] = $value;
+    }    
+  }
+  if(count($rows) < 1){
+    $rows[] = array(array('data'=>t('No modules have been enabled'),
+                          'colspan'=>3));
+  }
+  $output .= theme('table', $header, $rows, array('width'=>'100%'));
+  return $output;
+}
+ 
+/**
+ * Embed a kasahorow node via Javascript
+ * <script type="text/javascript"  src="http://example.com/node/3/kasahorow.js"> </script>
+ */
+function _kasahorow_embed($node){
+  $html = theme('kasahorow_embed', $node);
+  $html = drupal_to_js($html);
+  $output = 'document.write(\' '.$html.' \'); ';
+  drupal_set_header("Pragma: no-cache"); // HTTP/1.0
+  drupal_set_header("Cache-Control: private"); // HTTP/1.1
+  drupal_set_header("Content-Type: text/javascript", TRUE);
+  print $output;
+}
+
+/**
+ * Generate simply-themed node view
+ */
+function theme_kasahorow_embed($node){
+  global $base_url;
+  $theme = drupal_get_path('theme',
+                           variable_get('theme_default', 'bluemarine'));	
+  return "<div style='overflow:auto; width:520px; min-height:320px; ".
+         "border:1px solid gray; clear:both'>".
+         preg_replace("/(href=([\'|\"|]))/", "href=$2".$base_url,
+                      node_view($node))."</div>";
+}
+
+/**
+ * Define a hook_kwapi() operation which can be invoked in all modules.
+ *
+ * @param &$kasa
+ *   An unused object.
+ * @param $op
+ *   A string containing the name of the kwapi operation.
+ * @param $a3, $a4
+ *   Arguments to pass on to the hook, after the $kasa and $op arguments.
+ * @return
+ *   The returned value of the invoked hooks.
+ */
+function kasahorow_invoke_kwapi(&$kasa, $op, $a3 = NULL, $a4 = NULL) {
+  $return = array();
+  foreach (module_implements('kwapi') as $name) {
+    $function = $name .'_kwapi';
+    $result = $function($kasa, $op, $a3, $a4);
+    if (isset($result) && is_array($result)) {
+      $return = array_merge($return, $result);
+    }
+    else if (isset($result)) {
+      $return[] = $result;
+    }
+  }
+  return $return;
+}
+
+/**
+ * Return the kasahorow profile of this uid
+ */
+function _kw_account_name($uid){ 
+	$account = user_load(array('uid'=>$uid));
+	$fields = (variable_get('kw_account_profile', array()));
+	$extra = array();		
+	foreach($fields as $field){
+		if(isset($account->$field)){
+			$extra[]= $account->$field;
+		}
+	}
+	$extra = join($extra, ', ');
+	return $extra;
+}
+
+function expand_time(&$element){
+  $element['hour'] = array('#type'=>'select',
+                           '#options'=>drupal_map_assoc(range(0, 23)),
+                           '#default_value'=>$element['#default_value']['hour'],
+                           '#attributes' => $element['#attributes'],
+                          );
+  $element['minute'] = array('#type'=>'select',
+                             '#options'=>drupal_map_assoc(range(0, 59)),
+                             '#default_value'=>$element['#default_value']['minute'],
+                             '#attributes' => $element['#attributes'],
+                             );
+  
+  return $element;
+}
+
+/**
+ *Print debugging messages to user 1
+ *@ingroup Debug
+ */
+function _dprint($var){
+  global $user;
+  if($user->uid==1){
+    drupal_set_message(var_export($var, 1));
+  }
+}
+
+function _ktime_array($ts) {
+  return array(
+    'day' => date('j', $ts),
+    'month' => date('n', $ts),
+    'year'  => date('Y', $ts),
+    'hour' => date('H', $ts),
+    'minute' => date('i', $ts),
+  ); 
+}
+
+function _kmktime($ts_array) {
+  return mktime($ts_array['hour'], $ts_array['minute'], $ts_array['second'], 
+                  $ts_array['month'], $ts_array['day'], $ts_array['year']);
+}
+
+/**
+ * A unique service name for this instance. The database serving this site is good enough
+ * to ensure that even if the site is accessed from different domains(museke.com/lyrics.fienipa.com)
+ * the service name remains the same
+ */
+function _service_name() {
+  global $conf;
+  if('' == $conf['service_name']) {
+    $path_components = (parse_url(is_array($db_url)?$db_url['default']:$db_url));
+    $name = substr($path_components['path'], 1);
+  }else {
+    $name = $conf['service_name'];
+  }
+  return $name;
+}
