@@ -1,0 +1,166 @@
+<?php
+function swen_install() {
+  drupal_install_schema('swen');
+}
+
+function swen_schema(){
+    $schema['dict'] = array(
+  'description' => t('TODO: please describe this table!'),
+  'fields' => array(
+    'id' => array(
+      'description' => t('TODO: please describe this field!'),
+      'type' => 'int',
+      'not null' => TRUE,
+      'default' => 0,
+      'disp-width' => '11',
+    ),
+    'Dialect' => array(
+      'description' => t('TODO: please describe this field!'),
+      'type' => 'varchar',
+      'length' => '255',
+      'not null' => FALSE,
+    ),
+    'SwahiliWord' => array(
+      'description' => t('TODO: please describe this field!'),
+      'type' => 'varchar',
+      'length' => '255',
+      'not null' => FALSE,
+    ),
+    'SwahiliSortBy' => array(
+      'description' => t('TODO: please describe this field!'),
+      'type' => 'varchar',
+      'length' => '255',
+      'not null' => FALSE,
+    ),
+    'EnglishSortBy' => array(
+      'description' => t('TODO: please describe this field!'),
+      'type' => 'varchar',
+      'length' => '255',
+      'not null' => FALSE,
+    ),
+    'EnglishWord' => array(
+      'description' => t('TODO: please describe this field!'),
+      'type' => 'varchar',
+      'length' => '255',
+      'not null' => FALSE,
+    ),
+    'engalt' => array(
+      'description' => t('TODO: please describe this field!'),
+      'type' => 'varchar',
+      'length' => '255',
+      'not null' => FALSE,
+    ),
+    'engpluralalt' => array(
+      'description' => t('TODO: please describe this field!'),
+      'type' => 'varchar',
+      'length' => '255',
+      'not null' => FALSE,
+    ),
+    'englishplural' => array(
+      'description' => t('TODO: please describe this field!'),
+      'type' => 'varchar',
+      'length' => '255',
+      'not null' => FALSE,
+    ),
+    'swahiliplural' => array(
+      'description' => t('TODO: please describe this field!'),
+      'type' => 'varchar',
+      'length' => '255',
+      'not null' => FALSE,
+    ),
+    'swaalt' => array(
+      'description' => t('TODO: please describe this field!'),
+      'type' => 'varchar',
+      'length' => '255',
+      'not null' => FALSE,
+    ),
+    'swapluralalt' => array(
+      'description' => t('TODO: please describe this field!'),
+      'type' => 'varchar',
+      'length' => '255',
+      'not null' => FALSE,
+    ),
+    'PartOfSpeech' => array(
+      'description' => t('TODO: please describe this field!'),
+      'type' => 'int',
+      'not null' => FALSE,
+      'disp-width' => '5',
+    ),
+    'Class' => array(
+      'description' => t('TODO: please describe this field!'),
+      'type' => 'int',
+      'not null' => FALSE,
+      'disp-width' => '5',
+    ),
+    'SwahiliExample' => array(
+      'description' => t('TODO: please describe this field!'),
+      'type' => 'varchar',
+      'length' => '255',
+      'not null' => FALSE,
+    ),
+    'EnglishExample' => array(
+      'description' => t('TODO: please describe this field!'),
+      'type' => 'varchar',
+      'length' => '255',
+      'not null' => FALSE,
+    ),
+    'EnglishDef' => array(
+      'description' => t('TODO: please describe this field!'),
+      'type' => 'varchar',
+      'length' => '255',
+      'not null' => FALSE,
+    ),
+    'SwahiliDefinition' => array(
+      'description' => t('TODO: please describe this field!'),
+      'type' => 'varchar',
+      'length' => '255',
+      'not null' => FALSE,
+    ),
+    'RelatedWords' => array(
+      'description' => t('TODO: please describe this field!'),
+      'type' => 'varchar',
+      'length' => '255',
+      'not null' => FALSE,
+    ),
+    'Derived' => array(
+      'description' => t('TODO: please describe this field!'),
+      'type' => 'varchar',
+      'length' => '255',
+      'not null' => FALSE,
+    ),
+    'DerivedLang' => array(
+      'description' => t('TODO: please describe this field!'),
+      'type' => 'int',
+      'not null' => FALSE,
+      'disp-width' => '5',
+    ),
+    'DialectNote' => array(
+      'description' => t('TODO: please describe this field!'),
+      'type' => 'int',
+      'not null' => FALSE,
+      'disp-width' => '5',
+    ),
+    'Terminology' => array(
+      'description' => t('TODO: please describe this field!'),
+      'type' => 'varchar',
+      'length' => '255',
+      'not null' => FALSE,
+    ),
+    'Taxonomy' => array(
+      'description' => t('TODO: please describe this field!'),
+      'type' => 'varchar',
+      'length' => '255',
+      'not null' => FALSE,
+    ),
+    'nid' => array(
+      'description' => t('TODO: please describe this field!'),
+      'type' => 'int',
+      'not null' => FALSE,
+      'disp-width' => '5',
+    ),
+  ),
+  'primary key' => array('id'),
+);
+    return $schema;
+    
+}

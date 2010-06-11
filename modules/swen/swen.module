@@ -1,0 +1,1938 @@
+<?php
+/**
+ * TODO: Use the user-points module to award points when users
+ * submit new entries/photos, make edits, 
+ * or some other rewardable action.
+ * TODO: Clear cache when edits are saved. Check caching bug where display results are duplicated.
+ */
+{
+$GLOBALS['SWEN_FIELDS'] =  
+  array (
+     "Id",
+     "SwahiliWord",
+     "SwahiliSortBy",
+     "SwahiliPlural",
+  
+     "EnglishWord",
+     "EnglishSortBy",
+     "EnglishPlural",
+  
+     "PartOfSpeech",
+     "Class",
+  
+     "SwahiliExample",
+     "EnglishExample",
+     
+     "SwahiliDefinition",
+     "EnglishDef",
+          
+     "SwaAlt",
+     "EngAlt",
+          
+     "SwaPluralAlt",
+     "EngPluralAlt",
+     
+     "RelatedWords",
+     
+     "Derived",
+     "DerivedLang",
+     
+     "Dialect",
+     "DialectNote",
+     
+     "Terminology",     
+     "Taxonomy",
+     
+     "nid"
+    );
+}
+$pos = array("abbreviation","adj/adv","adjective","adverb","conjuction",
+            "infix","interjection","interrogative","name","noun","phrase",
+            "prefix","preposition","pronoun","verb","verb subject","verb tense",
+                    "verb relative","verb object","verb suffix");
+$GLOBALS['pos'] = $pos;
+         //dialect words
+         {
+         $dialect_words = array( "standard",
+           "archaic",
+           "colloquial",
+           "dialectical",
+           "recent",
+           "obsolete",
+           "Kimvita",
+           "Kiamu",
+           "Kipate",
+           "Kisiu",
+           "Kimrima",
+           "Kiunguja",
+           "Kimgao",
+           "Kitanga",
+           "Kivumba",
+           "Kihadimu",
+           "Kipemba",
+           "Kigwana",
+           "Kitikuu",
+           "Kingozi",
+           "Sheng" );
+
+         //sort dialects
+         sort( $dialect_words );
+        
+         $q = db_query("SELECT DISTINCT Dialect FROM {dict} WHERE Dialect IS NOT NULL AND Dialect != 0
+                ORDER BY Dialect");
+         $dialects = array();
+         while($r = db_fetch_object($q)){
+            if(is_numeric($r->Dialect)){
+                $dialects[$r->Dialect] = $dialect_words[$r->Dialect-1];
+            }
+         }
+         ksort($dialects);
+         $GLOBALS['dialect_words'] = $dialects;
+         }
+        //classes. don't know what this means though. just replicating what is in the
+        //perl version
+        
+        {
+       $derived_langs = array( "Swahili",
+               "Afrikaans",
+               "Arabic",
+               "Bantu",
+               "Chinese",
+               "English",
+               "Farsi",
+               "French",
+               "German",
+               "Gujerati",
+               "Hebrew",
+               "Hindi",
+               "Japanese",
+               "Latin",
+               "Luganda",
+               "Malay",
+               "Portuguese",
+               "Russian",
+               "Spanish",
+               "Turkish",
+               "Zulu" );
+
+        //sort( $derived_langs );
+        $GLOBALS['derived_langs'] = $derived_langs;
+        }
+{
+            $NClasses = array
+  (
+   "1",
+   "1/2",
+   "2",
+   "3",
+   "3/4",
+   "3/4an",
+   "3/10",
+   "4",
+   "5",
+   "5/6",
+   "5/6an",
+   "5/6ca",
+   "6",
+   "6/6",
+   "6an",
+   "7",
+   "7/8",
+   "7/8an",
+   "8",
+   "9",
+   "9/10",
+   "9/10an",
+   "9/10ca",
+   "9an",
+   "10",
+   "11",
+   "11/4",
+   "11/6",
+   "11/6an",
+   "11/8",
+   "11/10",
+   "11/10an",
+   "14",
+   "15",
+   "16",
+   "16/17/18",
+   "17",
+   "18",
+  );
+  $VClasses = array
+  (
+   "applicative",
+   " appl-assoc",
+   " appl-assoc-caus",
+   " appl-caus",
+   " appl-caus-intr",
+   " appl-caus-pass",
+   " appl-caus-recip",
+   " appl-caus-refl",
+   " appl-conv",
+   " appl-intr",
+   " appl-inver",
+   " appl-pass",
+   " appl-pass-poten",
+   " appl-poten",
+   " appl-recip",
+   " appl-refl",
+   "associative",
+   " assoc-caus",
+   " assoc-intr",
+   " assoc-inver",
+   " assoc-stat",
+   "auxiliary",
+   " aux-det",
+   "causative",
+   " caus-intr",
+   " caus-inver",
+   " caus-pass",
+   " caus-poten",
+   " caus-recip",
+   " caus-refl",
+   " caus-stat",
+   " caus-trans",
+   "conjugated",
+   "contactive",
+   "converse",
+   " conv-poten",
+   "determinative",
+   "durative",
+   "imperative",
+   "infinitive",
+   "intensive",
+   "intransitive",
+   " intr-inver",
+   " intr-inver-stat",
+   "inversive",
+   " inver-poten-trans",
+   "negative",
+   "passive",
+   " pass-poten",
+   "possessive",
+   "potential",
+   " poten-recip",
+   " poten-trans",
+   "reciprocal",
+   "reflexive",
+   "relative",
+   "stative",
+   "transitive",
+  );
+  $Classes = array_merge($VClasses, $NClasses);
+  $GLOBALS['Classes'] = $Classes;
+        }
+{
+       $terminologies = $Terminology = array (
+          'entomology',
+          'games (cards)',
+          'names',
+	  'military',
+          'poetic',
+	  'sport',
+          'photography',
+          'chemistry',
+          'automotive',
+          'historical',
+          'economics',
+          'physiology',
+          'nautical',
+          'agriculture',
+          'medical',
+          'mathematics',
+          'psychology',
+          'phonetics',
+          'zoology',
+          'music',
+          'legal',
+          'electricity',
+          'astronomy',
+          'finance',
+          'mythology',
+          'typography',
+          'slang',
+          'Islamic',
+          'pejorative',
+          'literary',
+          'political',
+          'technology',
+          'minerals',
+          'religious',
+          'ornithology',
+          'meteorology',
+          'enclitic',
+          'culinary',
+          'polygamy',
+          'linguistics',
+          'biology',
+          'physics',
+          'optics',
+          'biblical',
+          'aviation',
+          'mechanics',
+          'personal',
+          'railway',
+          'anatomy',
+          'marine',
+          'vulgar',
+          'geography',
+          'anthropology',
+          'pharmacy',
+          'grammar',
+          'botany',
+          'Christian',
+	  'IT-klnX'
+);
+    sort($Terminology);
+    $Terminology = array_reverse($Terminology);
+    array_push($Terminology, 'general');
+    $Terminology = array_reverse($Terminology);
+    $GLOBALS['Terminology'] = $Terminology;
+       }
+       
+/** implementing hook_menu **/
+function swen_menu() {
+  $items = array();
+  $items['swen/suggest'] = array(
+    'page callback' => '_swen_suggest',
+    'access arguments' => array('access content'),
+    'type' => MENU_CALLBACK
+  );
+    $items['lookup'] = array(
+        'title' => t('Lookup'),
+        'page callback' => '_swen_view',
+        'access arguments' => array('access lookup'),
+        'type' => MENU_CALLBACK);
+    $items['lookup/sw'] = array(
+        'title' => t('Lookup Swahili Word'),
+        'page callback' => '_swen_view',
+        'access arguments' => array('access lookup'),
+        'type' => MENU_CALLBACK);
+    $items['lookup/en'] = array(
+        'title' => t('Lookup English Word'),
+        'page callback' => '_swen_view',
+        'access arguments' => array('access lookup'),
+        'type' => MENU_CALLBACK);
+    $items['choose'] = array(
+        'title' => t('Edit'),
+        'page callback' => 'drupal_get_form',
+        'page arguments' => array('_swen_edit'),
+        'access arguments' => array('access editengine'),
+        'type' => MENU_CALLBACK);
+    $items['delete'] = array(
+        'title' => t('Delete'),
+        'page callback' => 'drupal_get_form',
+        'page arguments' => array('_swen_delete', 1),
+        'access arguments' => array('access delete'),
+        'type' => MENU_CALLBACK);
+    $items['add_cluster'] = array(
+        'title' => t('Add a new cluster'),
+        'page callback' => '_swen_add_cluster_js',
+        'access arguments' => array('access editengine'),
+        'type' => MENU_CALLBACK
+                                  );
+    $items['rank_cluster'] = array(
+        'title' => t('Rank and cluster'),
+        'page callback' => 'drupal_get_form',
+        'page arguments' => array('_swen_order'),
+        'access arguments' => array('access editengine'),
+        'type' => MENU_CALLBACK);
+    $items['vocab'] = array(
+        'title' => t('Vocabulary'),
+        'page callback' => '_swen_vocab',
+        'access arguments' => array('access lookup'),
+        'type' => MENU_CALLBACK);
+    $items['upload_image'] = array(
+        'title' => t('Upload images'),
+        'page callback' => '_swen_image',
+        'page arguments' => array('upload'),
+        'access arguments' => array('access upload'),
+        'type' => MENU_CALLBACK);
+    $items['view_image'] = array(
+        'title' => t('Illustrative images for'),
+        'page callback' => '_swen_image',
+        'page arguments' => array('view'),
+        'access arguments' => array('access lookup'),
+        'type' => MENU_CALLBACK);
+    
+    $items['admin/swen'] = array(
+      'title' => t('Dictionary'),
+      'description' => t('Manage the Swahili-English dictionary'),
+      'access arguments' => array('access administration pages'),
+      'page callback' => '_swen_admin_home',
+      'file' => 'swen.admin.inc',
+      'weight' => -10
+      );
+    $items['admin/swen/reports'] = array(
+        'title' => t('Reports'),
+        'description' => t('View various statistics about the dictionary'),
+        'file' => 'swen.admin.inc',
+        'page callback' => '_swen_reports',        
+        'access arguments' => array('administer swen'),
+        );
+    $items['admin/swen/reports/stats'] = array(
+        'title' => t('Database Statistics'),
+        'description' => t('View statistics about the dictionary database'),
+        'file' => 'swen.admin.inc',
+        'page callback' => '_swen_reports',
+        'page arguments' => array(3),
+        'access arguments' => array('administer swen'),
+        'type' => MENU_DEFAULT_LOCAL_TASK
+        );
+    $items['admin/swen/reports/frequency'] = array(
+        'title' => t('Top Searches'),        
+        'file' => 'swen.admin.inc',
+        'page callback' => '_swen_reports',
+        'page arguments' => array(3),
+        'access arguments' => array('administer swen'),
+        'type' => MENU_LOCAL_TASK
+        );
+    $items['admin/swen/reports/failed'] = array(
+        'title' => t('Failed Searches'),        
+        'file' => 'swen.admin.inc',
+        'page callback' => '_swen_reports',
+        'page arguments' => array(3),
+        'access arguments' => array('administer swen'),
+        'type' => MENU_LOCAL_TASK
+        );
+    $items['admin/swen/settings'] = array(
+        'title' => t('Dictionary Settings'),
+        'description' => t('Change the values of dictionary settings'),
+        'file' => 'swen.admin.inc',
+        'page callback' => 'drupal_get_form',
+        'page arguments' => array('_swen_settings'),
+        'access arguments' => array('administer swen'),
+        );
+    return $items;
+ }
+
+/** implementing hook_block **/
+function swen_block( $op = 'list', $delta = 0 ) {
+   if( $op == 'list' ) {
+           $block[0]['info'] = t('English/Swahili Lookup');
+           $block[1]['info'] = t('English/Swahili Search History');
+           $block[2]['info'] = t('Google Advert');
+           return $block;
+
+   } else if( $op == 'view' ){
+    switch($delta){
+      case 0:
+        $block['subject'] = '';
+        $block['content'] = drupal_get_form('swen_box_form');
+        break;
+      case 1:
+        $block['subject'] = t('Most Recent Searches');
+        $block['content'] = _swen_user_history();
+        break;
+      case 2:
+         $block['subject'] = t('Sponsored Results');
+         $block['content'] = '<script type="text/javascript"><!--
+            google_ad_client = "pub-3813119329978602";
+            //search_results
+            google_ad_slot = "2619301859";
+            google_ad_width = 120;
+            google_ad_height = 600;
+            //--></script>
+            <script type="text/javascript"
+            src="http://pagead2.googlesyndication.com/pagead/show_ads.js">
+            </script>';
+         break;
+    }
+      return $block;
+   }
+
+}
+
+/**
+ * hook_theme
+ */
+function swen_theme(){
+    return array(
+    'swen_page' => array('arguments'=>array('key'=>NULL)),
+    'swen_edit_form' => array('arguments'=> array('form'=>NULL)),
+    'swen_order_form' => array('arguments'=> array('form'=>NULL)),
+    );
+}
+
+ /** request keys **/
+function swen_get_keys() {
+  // Extract keys as remainder of path
+  // Note: support old GET format of searches for existing links.
+  if( isset ( $_POST['Word'] ) && isset( $_POST['EngP'] ) ) {
+    $keys = $_POST['Word'].'/'.$_POST['EngP'];
+  } else if( isset ( $_GET['Word'] ) && isset( $_GET['EngP'] ) ) {
+    $keys = $_GET['Word'].'/'.$_GET['EngP'];
+  }else{
+    $keys = $_GET['Word'].'/'.((arg(1)=='en'?1:0));
+  }
+  return $keys;
+}
+
+
+/** search results page **/
+function _swen_view($args='') {
+  $key = swen_get_keys();
+  return theme('swen_page', $key);
+}
+
+ /** search form **/
+function swen_box_form( $form_id = 'swen_theme_form' ) {
+  drupal_add_js("$(document).ready(function () {
+    $('#edit-Word').select();
+  });", 'inline');
+  $options = array( '1' => t('English - Swahili'), '0' => t('Swahili - English') );
+
+  //$form['#action'] = url( 'lookup' );
+  $form['#cache'] = 'false';
+  $form['Word'] = array(
+          '#type' => 'textfield',
+          '#title' => t('Translate'),
+          '#default_value' => $_GET['Word']?$_GET['Word']:'enter word',
+          '#attributes' =>array('onFocus'=>t('if(this.value==\'enter word\')this.value=\'\'; this.select();')),
+//Commenting out because of complaint from Martin Benjamin
+//          '#autocomplete_path' => 'swen/suggest',
+          '#size' => 15,
+          '#field_suffix' => t('to'),
+  );
+    
+  if(arg(1)=='en' OR $_GET['EngP']==1 OR empty($_GET['Word'])/*Default*/
+                OR $_COOKIE["kamusisearch"]=='en'){
+    $form['toSwa'] = array(
+      '#name' => 'en',
+      '#type' => 'submit',
+      '#value' => t('Swahili'),
+      '#attributes' => array(
+          'style'=>'border:1px solid #A90',
+          'title'=>t("Press 'Enter' to translate to Swahili")),
+    );
+    $form['toEng'] = array(
+      '#name' => 'sw',
+      '#type' => 'submit',
+      '#value' => t('English'),
+    );  
+  }else{    
+    $form['toEng'] = array(
+      '#name' => 'sw',
+      '#type' => 'submit',
+      '#value' => t('English'),
+      '#attributes' => array(
+          'style'=>'border:1px solid #A90',
+          'title'=>t("Press 'Enter' to translate to English")),
+    );
+    $form['toSwa'] = array(
+      '#name' => 'en',
+      '#type' => 'submit',
+      '#value' => t('Swahili'),      
+    );
+    
+  }
+  
+    
+  return $form;
+    //return drupal_get_form($form_id, $form, 'swen_box_form' );
+}
+
+
+
+
+ /** process form submission **/
+function swen_box_form_validate( $state, $values ) {
+  $word = $values['values']['Word'];
+
+  if( $word =='' ) {
+      form_set_error('Word', t('Please enter word.'));
+  }
+} 
+
+ /** process form submission **/
+function swen_box_form_submit( $state, &$values ) {
+  $word = $values['values']['Word'];
+  switch($values['clicked_button']['#name']){
+    case 'en':
+      $dxn = 1;
+      $path = 'lookup/en';
+      break;
+    case 'sw':
+      $dxn = 0;
+      $path = 'lookup/sw';
+      break;
+    default:
+      $dxn = 0;
+      $path = 'lookup/sw';
+      break;
+  }
+  
+  $values['redirect'] = array('path'=>$path,
+      'query'=>"Word=$word");
+}
+
+ /** theme the block search form **/
+function theme_swen_box_form( $form ) {
+   return '<div class="container-inline">'.form_render( $form ). '</div>';
+}
+
+ /** format search result page **/
+function theme_swen_page( $key) {
+  list($word, $lang) = split("\/", $key);
+  $dict = ($lang==1)?t('English'):t('Swahili');
+  $title = "Search Results for '$word' | Matokeo ya Utafutaji kwa '$word'";
+  
+  drupal_set_title($title);
+  if((trim($word)!='') && (trim($lang)!='')){
+    $output2 = _do_lookup( $word, $lang, $filter='' );
+  }else{
+    $output2 = "<p><strong>".t('Sorry, we could not process your request.')."</strong></p>";
+    $output2.= "<p>".t("You didn't give a search string.")."</p>";
+    $output2.= "<p>".t('Please submit your search again.')."</p>";
+    $output2.= "<div align='center'>".drupal_get_form('swen_box_form')."</div>";
+  }      
+
+  return $output2;
+ }
+
+ /** implementing hook_help **/
+function swen_perm() {
+  return array('access lookup', 'access upload', 'administer swen',
+    'access editengine', 'access delete', 'access paldo');
+}
+
+ /** a helpler function to actually query the kamusi database.
+  * Now the fun starts
+  * @param - string word - the word being searched
+  * @param - string lang - the language
+  * @param - string mode - ['lookup', 'edit']
+  * @return string searched word
+  **/
+function _do_lookup( $word, $lang, $mode='lookup' ) {
+  static $result_rows; //Let's cache the rows
+  $mode = (trim($mode)=='')?'lookup':$mode; //Enforce the default mode
+  $output = '';
+  $word = trim($word);
+  // determine the language being searched
+  $otherlanguage = ($lang == 1) ? "Swahili ": "English";
+  $olang = ($lang == 1) ? 0: 1;
+  $language = ($lang == 1) ? "English ": "Swahili";
+
+  $upload_img_url = "?q=upload_image";
+  $view_img_url = "?q=view_image";
+  $spec_voca = "?q=vocab";
+  
+  if(!isset($result_rows)){
+    $cache = cache_get("swen_result:$word#$lang");
+    $result_rows = $cache->data; //returns 0 if no cache results
+    if(($mode=='lookup') && count($result_rows)){ 
+      //do nothing--we're using the value from the cache      
+    }else{
+      $result_rows = array(); //re-initialize so it doesn't get added to cache
+      if(variable_get('swen_search', 'swen') == 'swen' &&
+         $_GET['mode']!='paldo') {
+         if( $lang == 1 ){
+           //check if word is a wildcard
+           if( preg_match( "/^\*[a-zA-Z]|[a-zA-Z]\*$/i",$word ) ) {
+             $wcword = str_replace( "*","%",$word );
+             $stmt = "SELECT DISTINCT di.*, wg.GroupNum FROM {dict} AS di " .
+                     "LEFT JOIN {word_grouping} AS wg ON ( di.Id = wg.WordId ) ".
+                     "WHERE  EnglishWord like '%s' " .
+                     "OR EnglishPlural like '%s' OR EngAlt like '%s' OR " .
+                     "EngPluralAlt like '%s' ".
+                     "Group By di.Id ".
+                     "ORDER BY wg.GroupNum ASC, wg.InGroupPos ASC, d.Id ASC";
+             $result = db_query( $stmt, $wcword,$wcword,$wcword,$wcword, $lang );
+           }else{
+             $stmt = "SELECT DISTINCT di.*, wg.GroupNum,wg.InGroupPos FROM {dict} AS di LEFT JOIN " .
+                     "{word_grouping} AS wg ON ( di.Id = wg.WordId ) WHERE di.EnglishSortBy='%s' " .
+                     "OR di.englishplural='%s' " .
+                     "OR di.engalt='%s' " .
+                     "OR di.engpluralalt='%s' ".
+                     "OR di.engalt REGEXP '\,%s\,' ".
+                     "OR di.engalt REGEXP '\,%s\$' ".
+                     "OR di.engalt REGEXP '^$%s\,' ".
+                     "OR di.engpluralalt REGEXP '\,$%s\,' ".
+                     "OR di.engpluralalt REGEXP '\,$%s\$' ".
+                     "OR di.engpluralalt REGEXP '\,^$%s\,' ".
+                     "Group By di.Id ".
+                     "ORDER BY wg.GroupNum ASC, wg.InGroupPos ASC, di.Id ASC";
+             $result = db_query( $stmt, $word,$word,$word,
+               $word,$word,$word,$word,$word,$word,$word, $lang );
+           }
+         } else {
+           $lang = 0; //Explicitly set $lang=0
+           //check if word is a wildcard
+           if( preg_match( "/^\*[a-zA-Z]|[a-zA-Z]\*$/i",$word ) ) {
+             $wcword = str_replace( "*","%",$word );                       
+             $stmt = "SELECT DISTINCT di.*, wg.GroupNum,wg.InGroupPos
+                     FROM {dict} AS di LEFT JOIN " .
+                     "{word_grouping} AS wg ON ( di.Id = wg.WordId )
+                     WHERE  TRIM( LEADING '-' FROM SwahiliWord) like '%s' " .
+                     "OR TRIM( LEADING '-' FROM SwahiliPlural) like '%s'
+                     OR TRIM(LEADING '-' FROM EngAlt) like '%s' OR " .
+                     "TRIM( LEADING '-' FROM SwaPluralAlt) like '%s'
+                     Group By di.Id ORDER BY wg.GroupNum ASC, wg.InGroupPos ASC";
+             $result = db_query( $stmt, $wcword,$wcword,$wcword,$wcword, $lang );
+           } else {
+             $stmt = "SELECT DISTINCT di.*, wg.GroupNum,wg.InGroupPos
+                     FROM {dict} AS di LEFT JOIN " .
+                      "{word_grouping} AS wg  ON ( di.Id = wg.WordId )
+                      WHERE TRIM(LEADING '-' FROM di.swahilisortby)='%s' ".
+                     "OR TRIM(LEADING '-' FROM di.swahiliplural)='%s' ".
+                     "OR TRIM(LEADING '-' FROM di.swaalt)='%s' ".
+                     "OR TRIM(LEADING '-' FROM di.swapluralalt)='%s' " .
+                     "OR TRIM(LEADING '-' FROM di.engalt) REGEXP '\,%s\,'".
+                     "OR TRIM(LEADING '-' FROM di.engalt) REGEXP '\,%s\$'".
+                     "OR TRIM(LEADING '-' FROM di.engalt) REGEXP '^$%s\,'".
+                     "OR TRIM(LEADING '-' FROM di.engpluralalt) REGEXP '\,$%s\,'".
+                     "OR TRIM(LEADING '-' FROM di.engpluralalt) REGEXP '\,$%s\$'".
+                     "OR TRIM(LEADING '-' FROM di.engpluralalt) REGEXP '\,^$%s\,'".
+                     "Group By di.Id
+                     ORDER BY wg.GroupNum ASC, wg.InGroupPos ASC, di.Id DESC";
+             $result = db_query( $stmt, $word,$word,$word,
+                  $word,$word,$word,$word,$word,$word,$word, $lang );
+           }
+   
+         }
+         while($r = db_fetch_object($result)){
+           $result_rows[] = $r;
+         }
+      }else{//Grab the results from PALDO instead
+         return _swen_lookup_paldo($word, $lang);
+      }
+      //Save the results to cache
+      if(count($result_rows)) {
+         cache_set("swen_result:$word#$lang", $result_rows);
+      }
+    }
+  }
+  
+  //Set some cookies
+  setcookie('kamusisearch', ($lang==1)?'sw':'en',
+            time() + ((3600 * 24) * 30), '/');
+  $history = unserialize($_COOKIE['kamusihistory']);
+  $history[$lang.'#'.$word] = time();
+  arsort($history);
+  $history = array_slice($history, 0, variable_get('swen_search_history', 10), 1);
+  
+  setcookie('kamusihistory', serialize($history), time() + ((3600 * 24) * 30), '/');
+  //Check the mode and return the resultset if the mode is 'edit'
+  if($mode=='edit'){ 
+    return $result_rows;
+  }
+
+  $grouping = -1;
+  $numresults = count($result_rows);  
+  $group = array(-1);
+  
+  for($i=0; $i<$numresults;$i++) {
+    //$words = db_fetch_object( $result );
+    $words = $result_rows[$i];
+    array_push($group, $words->GroupNum);
+    $output.= dictEntry($words, $lang, $group);
+  }
+        
+  $output .= format_plural($numresults, '1 distinct result returned',
+                           "!num distinct results returned.",
+               array('!num'=>$numresults?$numresults:0));
+       
+  if($lang==0){
+    //Use the verb parser
+    include_once(drupal_get_path('module', 'swen')."/swparser.php");
+    if($cache = cache_get("swen_parse:$word#$lang")){
+      $allparses = $cache->data;      
+    }else{
+      //Save the results to cache
+      $allparses = checkWord($word);   
+      cache_set("swen_parse:$word#$lang", $allparses);      
+    }
+    
+   if(is_array($allparses) &&
+      (count($allparses[0]) OR count($allparses[1]))){
+       $output.= "<hr/>";
+       
+       $output.= "The term that you searched for, <strong>$word</strong>,
+           may be a conjugated verb. We have analyzed your search term
+           and have found the following possible result(s):<br/>";
+       foreach($allparses as $parses){
+           foreach($parses as $id=>$parse){
+               $output.= $parse ;
+           }
+       }
+       
+   }
+   
+  }
+
+   $adcode = theme('blocks', 'advert');
+   $outputtodisplay = '<div>';
+   $outputtodisplay.= '<div class="swen-results">'.$output.'</div>';
+   $outputtodisplay.= '<div class="swen-googlead">'.$adcode.'</div>';
+   $outputtodisplay.= '</div><br style="clear:both;">';
+   $alt_lookup_path = $lang == 1 ? "lookup/sw": "lookup/en";
+   $search_url = l(t('Search'), $alt_lookup_path,
+                   array('query'=>"Word=$word&utm_source=self&utm_medium=link&utm_campaign=reverse",
+                         'rel'=>'nofollow'));
+   
+  $header2 = <<<EOH
+          <b>Search Results for '$word' | Matokeo ya Utafutaji kwa '$word'</b><br>
+   <p>The results for '$word' are displayed below as they have been grouped and ranked by a Kamusi Project <a href='?q=participants'>participant</a>. 
+
+Matokeo kwa '$word' yaonyeshwa kama waliorodheshwa na <a href='?q=participants'>mshiriki</a> wa Kamusi Hai.
+          <hr />
+          DEAR VISITORS: The Kamusi Project is administered by the World Language
+          Documentation Centre as of October 16, 2007.  We depend entirely on user
+          donations to maintain and improve this resource.  Please click the
+          Donate Now button to make a donation in any major currency, via PayPal
+          or credit card. <br />
+          <!-- donation button -->
+          <a href="http://www.kamusiproject.org/how_to_help">
+          <img src="https://www.paypal.com/en_US/i/btn/x-click-but21.gif" border="0" name="submit" alt="Make payments with PayPal - it's fast, free and secure!"/></a>
+<hr />
+
+  $outputtodisplay
+<P>
+Would you like to modify this search?<BR>
+<UL>
+
+<LI>Search for entries <STRONG>beginning with</STRONG> $word with a (<STRONG>*</STRONG>) like this: <STRONG>$word*</STRONG>
+<LI>Search for entries <STRONG>containing</STRONG> $word with surrounding (<STRONG>*</STRONG>)s like this: <STRONG>*$word*</STRONG>
+<LI>$search_url
+
+    the <STRONG>$otherlanguage-$language</STRONG> dictionary for "$word"
+EOH;
+
+   if( user_access('access editengine')) {
+     $addnewurl = url('choose');
+     $groupingtool = l($word, "rank_cluster/$word/$lang",
+                       array('query'=>drupal_get_destination()));
+$header2 .= <<<EOHT
+      <LI>Use the Grouping Tool to re-rank the results for $groupingtool
+      <LI><FORM ACTION="$addnewurl/$word"
+      METHOD="get" NAME="nav2">
+      <DIV>
+      <a href="http://www.kamusiproject.org/en/editengine">Add</a> $word. Start with:
+              <SELECT NAME="only_blanks" onChange="document.location.href= '$addnewurl/$word/'  document.nav2.only_blanks.options[document.nav2.only_blanks.selectedIndex].value">
+                      <option value="1" selected>1 new line
+                      <option value="2">2 new lines
+                      <option value="3">3 new lines
+                      <option value="4">4 new lines
+                      <option value="5">5 new lines
+                      <option value="6">6 new lines
+                      <option value="7">7 new lines
+                      <option value="8">8 new lines
+                      <option value="9">9 new lines
+                      <option value="10">10 new lines
+              </SELECT>
+              <INPUT TYPE=HIDDEN NAME="Word"   VALUE="$word">
+              <INPUT TYPE=HIDDEN NAME="EngP"   VALUE="$lang">
+              <!--INPUT TYPE=HIDDEN NAME="destination"   VALUE="lookup=$word&EngP=$lang"-->
+              <INPUT TYPE="SUBMIT" VALUE="Add new entries">
+      </DIV>
+      </FORM>
+      </UL>
+
+EOHT;
+}
+   
+   
+   if(trim($word) && $numresults==0 && count($allparses[0])==0 && count($allparses[1])==0){
+     $type = $lang==0?'sw|en':'en|sw';
+     watchdog($type, $word, array(),  WATCHDOG_ALERT, '');
+   }
+   return $header2;
+
+ }
+
+ /**
+  * implementing the grouping feature
+  *
+  *@param String word - the word to be searched.
+  *@param Integer engp - the language
+  */
+ function _get_image( $word_id  ) {
+  if($word_id > 0) {
+       $stmt = "SELECT COUNT(FileName) FROM {images} WHERE Id =%d";
+       $result = db_result(db_query( $stmt, $word_id ));
+       return $result;
+  }
+ }
+ 
+ 
+function _swen_image($mode='view', $Id=''){
+    $output = '';
+    $dxn = ($_GET['EngP']==1)?1:0;
+    $id = trim($Id) ? $Id : $_GET['id'];
+    
+    switch($mode){        
+        case 'upload':{
+              $output.= drupal_get_form('_swen_upload_form', $id, $dxn);
+            }            
+            break;
+        case 'view':
+            default:{
+                $rows = array();
+                
+                $pair = db_fetch_object(db_query("SELECT * FROM {dict}
+                    LEFT JOIN {word_grouping} ON Id=WordId
+                    WHERE Id=%d GROUP BY Id", $id));
+                
+                $output.= dictEntry($pair, $dxn);
+                
+                $q = db_query("SELECT * FROM {images} WHERE Id=%d", $id);
+                while($r = db_fetch_object($q)){
+                    $src = file_create_url(variable_get('swen_image_dir', 'files/').$r->FileName);
+                    $website = parse_url($r->PhotoWebsite);                    
+                    $ext = (empty($website['scheme'])?'http://':$website['scheme'].'://').$website['host'].$website['path'];
+                    $rows[$r->Id] = array(
+                        "<img src='$src'  height='98px'/>",
+                        '<label>'.l('Mahali', 'lookup', array('query'=>'Word=mahali&EngP=0')).'</label> : '.$r->LocationPhotoTaken."<br/>".
+                        '<label>'.l('Tarehe', 'lookup', array('query'=>'Word=tarehe&EngP=0')).'</label> : '.$r->DatePhotoTaken."<br/>".
+                        '<label>'.l('Mtandao', 'lookup', array('query'=>'Word=mtandao&EngP=0')).'</label> : '.l($r->PhotoWebsite, $ext),
+                                          );
+                }
+                $output.= theme('table', array(), $rows);
+                
+            } 
+            break;
+    }
+    return $output;
+}
+ /**
+  * Various snippets of code
+  * 1. QuantCast
+  */
+function swen_footer(){
+   if(variable_get('swen_quantcast', 1) ){
+    return '<!-- Start Quantcast tag -->
+<script type="text/javascript">
+_qoptions={
+qacct:"p-d8x0LIoNE57_c"
+};
+</script>
+<script type="text/javascript" src="http://edge.quantserve.com/quant.js"></script>
+<noscript>
+<img src="http://pixel.quantserve.com/pixel/p-d8x0LIoNE57_c.gif" style="display: none;" border="0" height="1" width="1" alt="Quantcast"/>
+</noscript>
+<!-- End Quantcast tag -->';
+   }
+}
+
+function _swen_vocab(){
+    global $Terminology, $dialect_words;
+
+    $dxn = $_GET['EngP'];
+    $term = $_GET['DiaOrTerm'];
+    $tid = $_GET['DiaOrTermNum'];
+    $lang = ($dxn==1)? t('English') : t('Swahili');    
+    $other = ($dxn==0)? t('English') : t('Swahili');
+    $sortby = ($dxn==1)? 'EnglishWord' : 'SwahiliWord';
+    
+    drupal_set_title(t('Specialized Vocabulary'));
+    
+    if(!$tid){
+        $output.="<h3> Dialects | Lahaja</h3>";
+        $output.= "<ul>";
+        foreach($dialect_words as $key=>$value){
+            if($value!='standard'){
+                $output.= "<li>$value ".l($other, 'vocab',
+                    array('query'=>"DiaOrTerm=Dialect&DiaOrTermNum=$key&EngP=".($dxn?0:1)));
+                $output.= " - ".l($lang, 'vocab',
+                    array('query'=>"DiaOrTerm=Dialect&DiaOrTermNum=$key&EngP=".($dxn?1:0)));
+            }
+        }
+        $output.= "</ul>";
+        $output.="<h3> Terminologies | Istilahi</h3>";
+        $output.= "<ul>";
+        foreach($Terminology as $key=>$value){
+            if($key>0){
+                $output.= "<li>$value ".l($other, 'vocab',
+                    array('query'=>"DiaOrTerm=Terminology&DiaOrTermNum=$key&EngP=".($dxn?0:1)));
+                $output.= " - ".l($lang, 'vocab',
+                    array('query'=>"DiaOrTerm=Terminology&DiaOrTermNum=$key&EngP=".($dxn?1:0)));
+            }
+        }
+        $output.= "</ul>";
+        
+    }else{
+        
+        $table = ($term=='Dialect')?'Dialect':'Terminology';
+        $lookup = ($term=='Dialect')?$dialect_words:$Terminology;
+        $output = "<h3>".t("Specialized !lang Vocabulary Results for !type '!term' (view !other)",
+        array('!lang'=>$lang, '!term'=>$lookup[$tid], '!type'=>$term,
+              '!other'=>l($other, 'vocab',
+                    array('query'=>"DiaOrTerm=$term&DiaOrTermNum=$tid&EngP=".($dxn?0:1)))))."</h3><br/><br/>";
+        $q = db_query("SELECT * FROM {dict}
+            WHERE $table=%d AND $table!=0
+            ORDER BY $sortby", $tid);
+        $output.="<div id='swen-results'>";
+        while($row = db_fetch_object($q)){
+            $output.= dictEntry($row, $dxn);
+        }
+        $output.="</div>";
+        drupal_set_breadcrumb(array(l(t('Home'), ''),
+                                    l(t('Specialized Vocabulary'), 'vocab'),
+                                    l($term, 'vocab',
+                                      array('query'=>"DiaOrTerm=$term&DiaOrTermNum=$tid&EngP=".($dxn?0:1)))));
+    }
+    return $output;
+}
+
+function dictEntry($words, $lang, $group=array()){
+    global $Terminology, $Classes, $derived_langs, $pos, $dialect_words;
+    $upload_img_url = "?q=upload_image";
+    $view_img_url = "?q=view_image";
+    $spec_voca = "?q=vocab";
+    
+    $language = $lang == 1 ? "Swahili ": "English";
+    $lookup_path = $lang == 1 ? "lookup/en": "lookup/sw";
+    $alt_lookup_path = $lang == 1 ? "lookup/sw": "lookup/en";
+
+    $upload_img_url = "?q=upload_image";
+    $view_img_url = "?q=view_image";
+    /** add <hr /> to the groupings **/
+    $gindex = count($group)-1;
+    $grouping = $group[$gindex-1];
+        if( $grouping == -1 ) {
+            $grouping = $words->GroupNum;
+
+        } else if( $grouping != $words->GroupNum) {
+            $output .= "<hr />";
+            $grouping = $words->GroupNum;
+        }
+        $wrd = $lang == 1 ? $words->SwahiliWord : $words->EnglishWord;
+        
+        //break sentence into a single word
+        $sig_word = ($lang==1)?$words->SwahiliSortBy:$words->EnglishSortBy; //explode(" ", $wrd );
+        $rel_words = explode( ",", $words->RelatedWords );
+        if( is_array( $rel_words) ) {
+            $rw = array();
+            foreach( $rel_words as $value ) {
+                $value = trim($value);
+                //$rw[] = "<a href=\"?q=lookup&Word=$value&EngP=$lang\">$value</a>";
+                $rw[] = l($value, $alt_lookup_path,
+                             array('query'=>'Word='.$value.'&utm_source=self&utm_medium=link&utm_campaign=relatedword',
+                                   'rel'=>'nofollow'));
+                    
+            }
+            $related_words = join('; ', $rw); //"<a href=\"?q=lookup&Word=$value&EngP=$lang\">$value</a>";
+        } else {
+          $related_words = l($words->RelatedWords, $alt_lookup_path,
+                             array('query'=>'Word='.$words->RelatedWords.'&utm_source=self&utm_medium=link&utm_campaign=relatedword',
+                                   'rel'=>'nofollow'));
+            //$related_words = "<a href=\"?q=lookup&Word=".$words->RelatedWords."&EngP=$lang\">".$words->RelatedWords."</a>";
+        }
+        $wrd_meaning = $lang == 1 ? $words->EnglishWord : $words->SwahiliWord;
+
+        $langeg = $lang == 1 ? $words->EnglishExample : $words->SwahiliExample;
+
+        $word_pl_alt = $lang == 1 ? $words->SwahiliPlural : $words->EnglishPlural;
+        $frm_wrd = $word_pl_alt != '' ? ', pl '.$word_pl_alt.'' : '';
+
+        $pl_word = $lang == 1 ? $words->EnglishPlural : $words->SwahiliPlural;
+        $frm_pl_wrd = $pl_word !='' ? ' , pl <strong>'.$pl_word.'</strong>' : '';
+
+        /** checking for empty strings so we don't show empty meanings and examples */
+        $derived = $words->Derived == "" ? "" : "[ derived: ".$words->Derived." ]";
+
+        $derived_lang = in_array($derived_langs[ $words->DerivedLang ],
+            array('', 'Swahili')) ? "" :
+                "[ derived: ".$derived_langs[ $words->DerivedLang ]." ]";
+
+        $lang_eg_sw = $words->SwahiliExample == "" ? "" : "Swahili Example: ".
+                $words->SwahiliExample."<br />";
+        $lang_def_sw = $words->SwahiliDefinition == "" ? "" : "Swahili Definition: ".
+                $words->SwahiliDefinition."<br />";
+
+        $lang_eg_en = $words->EnglishExample == "" ? "" : "English Example: ".
+                $words->EnglishExample."<br />";
+        $lang_def_en = $words->EnglishDef == "" ? "" : "English Definition: ".
+                $words->EnglishDef."<br />";
+
+        $see_also = $words->RelatedWords == "" ? "" : "[ see also: $related_words]";
+
+        $notes = $words->DialectNote == "" ? "": "[ note: ".$words->DialectNote.". ]";
+
+        $terminology = $words->Terminology == 0 ? "": "[ Terminology: "."<a href=\"$spec_voca&" .
+        "DiaOrTerm=Dialect&DiaOrTermNum=$words->Terminology&EngP=1\"> ".
+        $Terminology[ $words->Terminology ]."</a> ]";
+
+        if(user_access('access upload')){
+          $image = "<a href=\"$upload_img_url&id=".$words->Id."&EnglishWord=".$words->EnglishWord."&SwahiliWord=".$words->SwahiliWord."&EngP=0\"> upload</a>";
+        }
+
+        //check if the word has images
+        if( _get_image( $words->Id ) != 0  ) {
+            $image .= " / <a href=\"$view_img_url&id=".$words->Id."&EnglishWord=".$words->EnglishWord."&SwahiliWord=".$words->SwahiliWord."&EngP=0\">view</a>";
+        }
+        if($image){
+            $photos = "[ photos:$image ]";
+        }
+
+        //ugly code here will refine it later
+        if( $lang == 1 ) {
+            $alt_lang = 0;
+            $alt_word = $words->EngAlt == "" ? "" : "( or ".$words->EngAlt." )";
+            $alt_plural_word = $words->EngPluralAlt == "" ? "" : "( or ".$words->EngPluralAlt." )";
+        } else {
+            $alt_lang = 1;
+            $alt_word = $words->SwaAlt == "" ? "" : "( or ".$words->SwaAlt." )";
+            $alt_plural_word = $words->SwaPluralAlt == "" ? "" : "( or ".$words->SwaPluralAlt." )";
+        }
+        if($words->Dialect){
+            $dialect = "[Dialect: ".l($dialect_words[$words->Dialect], 'vocab',
+                array('query'=>"DiaOrTerm=Dialect&DiaOrTermNum=".$words->Dialect))."]";
+        }
+                   
+
+        /** putting them all together **/
+        
+        if($words->nid>0 && user_access('access editengine')){
+          $paldo = l(t('edit in PALDO'),
+                     variable_get('paldo_server',
+                                  'http://data.kamusiproject.org').
+                     "/node/$words->nid/edit",
+              array('attributes'=>array('class'=>'readmore',
+                  'target' => 'paldo',
+                  'title'=>t('Edit the PALDO version of this entry')))
+              );
+          $paldo.= swen_paldo($words->nid);
+        }
+        if(user_access('access delete')){
+          $delete = l(t('delete'), "delete/$words->Id",
+                      array('query'=>drupal_get_destination(),
+                            'attributes'=>array('class'=>'delete')));
+          $delete = "[ $delete ] ";
+        }
+        $output .= "<strong>".$wrd_meaning."</strong> $paldo ".$alt_word." $frm_pl_wrd $alt_plural_word". " <strong>{</strong> $language: " .
+                   l($wrd, $alt_lookup_path,
+                             array('query'=>'Word='.$sig_word."&utm_source=self&utm_medium=link&utm_campaign=linkto$language",
+                                   'rel'=>'nofollow')).
+                   $frm_wrd.$derived." $dialect<strong>}</strong>$derived_lang $terminology " ."<br />";
+        if(trim($words->Taxonomy)){
+            $output.= "taxonomy: ". l($words->Taxonomy,
+                "http://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?srchmode=2&name=$words->Taxonomy",
+                array('attributes'=>array('target'=>'nih')));
+            $output.= "<br/>";
+        }
+        $output .= $pos[$words->PartOfSpeech]." ".$Classes[$words->Class];
+        
+        if(user_access('access editengine')){
+          $sortby = ($lang==1)?'EnglishSortBy':'SwahiliSortBy';
+          $output.= ' [ '.l(t('edit entry'),
+              "choose/".$words->$sortby."/$lang",
+              array('query'=>drupal_get_destination(),
+                    'rel'=>'nofollow')).' ] ';
+        }
+        $output.= " $photos $see_also <br />";
+
+        // this is ugly. needs fixing
+        if($lang==1){
+            $output .=  '<div style="text-indent: 2.0em;" >'.$lang_def_en.
+                $lang_eg_en.'</div><div style="text-indent: 2.0em;" >'.
+                $lang_def_sw.$lang_eg_sw.'</div>';
+        }else{
+            $output .=  '<div style="text-indent: 2.0em;" >'.$lang_def_sw.
+                $lang_eg_sw.'</div><div style="text-indent: 2.0em;" >'.
+                $lang_def_en.$lang_eg_en.'</div>';
+        }
+        $output .= $notes .$delete."<br /><br />";
+        
+        
+
+    return $output;   
+}
+
+function swen_file_download($filepath) {
+  $word_id = substr($bn=basename($filepath), 0, strpos($bn, '_'));
+  // Check if the file is controlled by the current module.
+  if (_get_image($word_id)) {
+    if (user_access('access lookup')) {
+      return array('Content-type: image' );
+    }
+    else {
+      return -1;
+    }
+  }
+}
+
+/**
+ * Add/Edit new entries
+ * TODO: Add new entries
+ */
+function _swen_edit($state=array(), $root='', $EngP=0, $numlines=0){
+  global $SWEN_FIELDS, $Terminology, $Classes, $derived_langs, $pos, $dialect_words;
+  $form = array();
+  drupal_set_title( t('Edit !word', array('!word'=>$root)));
+  //return $form;
+  $numlines = ($numlines==0)?$_GET['only_blanks']:$numlines;
+  $EngP = ($EngP)?$EngP:0;
+  $form['#theme'] = 'swen_edit_form';
+  $form['goback'] = array(
+      '#type'=>'item',
+      '#value'=>t('Cancel and go back to !search',
+                  array('!search'=>
+                        l($root, 'lookup/'.($EngP==1?'en':'sw'),
+                         array('query'=>"Word=$root")))));
+  $form['entries'] = array('#tree'=>TRUE);
+  if(trim($root)!=''){
+    $result = _do_lookup($root, $EngP, 'edit');
+    foreach($result as $row){
+      foreach($SWEN_FIELDS as $field){
+        $options = array();
+        $multiple = $required = FALSE;
+        switch($field){
+          case 'Id':
+            $type = 'hidden';
+            break;
+          case 'PartOfSpeech':
+            $type = 'select';
+            $options = $pos;
+            break;
+          case 'Class':
+            $type = 'select';
+            $options = $Classes;
+            break;
+          case 'Terminology':
+            $type = 'select';
+            $options = $Terminology;
+            break;
+          case 'Dialect':
+            $type = 'select';
+            $options = $dialect_words;
+            break;
+          case 'DerivedLang':
+            $type = 'select';
+            $options = $derived_langs;
+            break;
+          case 'SwahiliExample':
+          case 'EnglishExample':
+          case 'SwahiliDefinition':
+          case 'EnglishDef':
+            $type = 'textarea';
+            break;
+          case 'EnglishSortBy':
+          case 'SwahiliSortBy':
+          case 'SwahiliWord':
+          case 'EnglishWord':
+            $required = TRUE;
+            //fallthrough to inherit the other properties
+          default:
+            $type = 'textfield';
+            break;
+        }
+        $form['entries'][$row->Id][$field] = array(
+          '#type' => $type,
+          '#title' => $field,
+          '#default_value' => $row->$field,
+          '#description' => $field.": ".$row->$field,
+          '#required'=>$required,
+        );
+        if($type=='select'){
+          $form['entries'][$row->Id][$field]['#options'] = $options;
+          $form['entries'][$row->Id][$field]['#multiple'] = $multiple;
+          $form['entries'][$row->Id][$field]['#description'] = $field.": ".
+                                                $options[$row->$field];
+        }else if($type=='textfield'){
+          $form['entries'][$row->Id][$field]['#size'] = 15;
+        }
+      }
+    }
+  }
+  //Adding new entries
+  for($i=0; $i < $numlines; $i++){
+    foreach($SWEN_FIELDS as $field){
+      $options = array();
+      $multiple = $required = FALSE;
+      switch($field){
+        case 'Id':
+          $type = 'hidden';
+          break;
+        case 'PartOfSpeech':
+          $type = 'select';
+          $options = $pos;
+          break;
+        case 'Class':
+          $type = 'select';
+          $options = $Classes;
+          break;
+        case 'Terminology':
+          $type = 'select';
+          $options = $Terminology;
+          break;
+        case 'Dialect':
+          $type = 'select';
+          $options = $dialect_words;
+          break;
+        case 'DerivedLang':
+          $type = 'select';
+          $options = $derived_langs;
+          break;
+        case 'SwahiliExample':
+        case 'EnglishExample':
+        case 'SwahiliDefinition':
+        case 'EnglishDef':
+          $type = 'textarea';
+          break;
+        case 'EnglishSortBy':
+        case 'SwahiliSortBy':
+        case 'SwahiliWord':
+        case 'EnglishWord':
+          $required = TRUE;
+          //fallthrough to inherit the other properties
+        default:
+          $type = 'textfield';
+          break;
+      }
+      
+      $form['entries']["new-$i"][$field] = array(
+        '#type' => $type,
+        '#title' => $field,
+        '#default_value' => $_GET['EngP']==1?$_GET[str_replace('English', '', $field)]:$_GET[str_replace('Swahili', '', $field)],
+        '#description' => $field,
+        '#required'=>$required,
+      );
+      if($type=='select'){
+        $form['entries']["new-$i"][$field]['#options'] = $options;
+        $form['entries']["new-$i"][$field]['#multiple'] = $multiple;
+      }else if($type=='textfield'){
+        $form['entries']["new-$i"][$field]['#size'] = 15;
+      }
+    }
+  }
+  //$form['addnew'] = array('#type'=>'item', '#value'=>'Haye');
+  $form['save'] = array('#type'=>'submit', '#value'=>t('Save'));
+  return $form;
+}
+
+/**
+ * Validate new form submissions
+ * Use for 'Previewing'
+ */
+function _swen_edit_validate($form, &$values){
+  
+}
+
+function _swen_edit_submit($form, &$values){
+  $vals = $values['values']; 
+  foreach($vals['entries'] as $entry){
+    if(trim($entry['Id'])>0){
+      db_query(_swen_build_query('update', 'dict', $entry));
+    }else{
+      db_query(_swen_build_query('insert', 'dict', $entry));
+    }    
+  }
+  _swen_update_cache(array_pop($vals['entries']));
+}
+
+function _swen_build_query($mode, $table, $values){
+  global $SWEN_FIELDS;
+  $sql = '';  
+  switch($table){
+    case 'dict':
+      $fields = $SWEN_FIELDS;
+      $primary = 'Id';
+      $autoincrement = TRUE;
+      break;
+    case 'word_grouping':
+      $fields = array('SortBy', 'EngP', 'GroupNum', 'InGroupPos', 'WordId');
+      $primary = 'WordId';
+      break;
+  }
+  
+  $table = '{'.$table.'}'; //Add the table brackets
+  
+  switch($mode){
+    case 'insert':
+      if($autoincrement){
+        unset($fields[array_search($primary, $fields)]);
+      }
+      
+      $insertvalues = array();
+      foreach($fields as $field){        
+        $insertvalues[]= sprintf("'%s'", check_plain($values[$field]));
+      }
+      
+      $sql = sprintf("INSERT INTO $table");
+      $sql.= '('.join(',', $fields).') ';
+      $sql.= ' VALUES('.join(',',$insertvalues).' )';      
+      
+      break;
+    case 'update':
+      $sql = sprintf("UPDATE $table SET ");
+      $sqlarray = array();
+      foreach($fields as $field){
+        $sqlarray[]= sprintf(" $field='%s' ", check_plain($values[$field]));
+      }
+      $sql.= join(', ', $sqlarray);
+      $sql.= "WHERE $primary=$values[$primary]\n";
+      break;
+  }
+  return $sql;
+}
+
+/**
+ * Let's theme some forms
+ * Editing form
+ */
+function theme_swen_edit_form($form){//print_r($form);
+  global $SWEN_FIELDS;
+  $output = '';
+  $header = $SWEN_FIELDS;
+  $headerfields = array(
+    t('Word'),      //('SwahiliWord', 'EnglishWord'),
+    t('Headword'),  //('SwahiliSortBy', 'EnglishSortBy')
+    t('Plural'),    //('SwahiliPlural', 'EnglishPlural')
+    t('Part of Speech'),
+    t('Class'),
+    t('Example'),   //('SwahiliExample', 'EnglishExample')
+    t('Definition'),//('SwahiliDefinition', 'EnglishDef')
+    t('Alternate Singular'), //('SwaAlt', 'EngAlt'),
+    t('Alternate Plural'),   //('SwaPluralAlt', 'EngPluralAlt')
+    t('Related Words'),
+    t('Derived'),
+    t('Derived Language'),
+    t('Dialect'),
+    t('Dialect Note'),
+    t('Terminology'),
+    t('Taxonomy'),
+    t('Swahili PALDO Node')
+                  );
+  $rows = array();
+  foreach(element_children($form['entries']) as $Id){
+    //The idea is to group paired columns together
+    foreach($SWEN_FIELDS as $field){
+      $form['entries'][$Id][$field]['#title']='';
+      switch($field){
+        case 'Id':
+          break;
+        case 'SwahiliWord':
+        case 'EnglishWord':
+          $rows[$Id]['Word'].= drupal_render($form['entries'][$Id][$field]);
+          break;
+        case 'SwahiliSortBy':
+        case 'EnglishSortBy':
+          $rows[$Id]['Headword'].= drupal_render($form['entries'][$Id][$field]);
+          break;
+        case 'SwahiliPlural':
+        case 'EnglishPlural':
+          $rows[$Id]['Plural'].= drupal_render($form['entries'][$Id][$field]);
+          break;
+        case 'SwahiliExample':
+        case 'EnglishExample':
+          $rows[$Id]['Example'].= drupal_render($form['entries'][$Id][$field]);
+          break;
+        case 'SwahiliDefinition':
+        case 'EnglishDef':
+          $rows[$Id]['Def'].= drupal_render($form['entries'][$Id][$field]);
+          break;
+        case 'SwaAlt':
+        case 'EngAlt':
+          $rows[$Id]['AltSing'].= drupal_render($form['entries'][$Id][$field]);
+          break;
+        case 'SwaPluralAlt':
+        case 'EngPluralAlt':
+          $rows[$Id]['AltPlu'].= drupal_render($form['entries'][$Id][$field]);
+          break;
+        default:
+        //drupal_set_message($field);
+        $rows[$Id][$field] = drupal_render($form['entries'][$Id][$field]);  
+          break;        
+      }      
+      
+    }
+    
+  }
+  
+  $output.= theme('table', $headerfields, $rows);
+  $output .= drupal_render($form);
+  return $output;
+}
+
+
+function theme_swen_order_form($form){
+  $header = array('', t('Group'), t('Rank'));
+  $ORDER_FIELDS = array('SortBy', 'GroupNum', 'InGroupPos');
+  $rows = array();
+  foreach(element_children($form['entries']) as $Id){
+    foreach($ORDER_FIELDS as $field){
+    //print_r($form['entries'][$Id]);
+      $form['entries'][$Id][$field]['#title']='';
+      $rows[$Id][$field] = drupal_render($form['entries'][$Id][$field]);
+    }
+  }
+  $output.= theme('table', $header, $rows);
+  $output .= drupal_render($form);
+  return $output;
+}
+
+function _swen_upload_form($state, $id, $dxn=0){
+  global $user;
+  $form = array();
+  if(!$id){
+    watchdog('swen', 'Attempted to upload an image for Id=%d',
+             array('%d'=>$id), WATCHDOG_ERROR);
+    drupal_not_found();
+    exit;
+  }
+  drupal_set_message('Not yet implemented. Uploaded images will not be saved', 'warning', 0);
+  $words = db_fetch_object(db_query("SELECT * FROM {dict} WHERE Id=%d", $id));
+  $form['word'] = array('#type'=>'item', '#value'=>dictEntry($words, $dxn));
+  $form['Id'] = array('#type'=>'hidden', '#value'=>$id);
+  $form['FileName'] = array('#type'=>'file', '#title'=>t('Enter Image File'),
+      //'#required'=>TRUE
+      );
+  $form['LocationPhotoTaken'] = array('#type'=>'textfield',
+      '#title'=>t('Location photo was taken'));
+  $form['DatePhotoTaken'] = array('#type'=>'date',
+      '#title'=>t('Approximate date photo was taken'));
+  $form['PhotoAdditionalInfo'] = array('#type'=>'textarea',
+      '#title'=>t('Additional information about the photo'));
+  $form['PhotographerName'] = array('#type'=>'value',
+      '#value'=>$user->name);
+  $form['PhotoWebsite'] = array('#type'=>'textfield',
+      '#title'=>t('Photo Website'));
+  $form['PhotoWebsiteDate'] = array('#type'=>'date',
+      '#title'=>t('Approximate date photo was posted on website'));
+  $form['emailconfirm'] = array('#type'=>'checkbox',
+      '#title'=>t('Please send confirmation when my photo has been
+                  reviewed by the editor'),
+      '#default_value'=>1);
+  $form['uploadsave'] = array('#type'=>'submit', '#value'=>t('Upload'), '#description'=>'aaaa');
+  return $form;
+}
+
+function _swen_upload_form_submit($form, &$values){
+  $vals = $values['values'];
+  //print_r($vals);
+}
+
+function _swen_order($state=array(),$root='', $dxn=0){
+  global $pos;
+  //include_once('grouping.inc');
+  drupal_set_title( t('Rank and Cluster !word', array('!word'=>$root)));
+  $form = array();
+  $form['#theme'] = 'swen_order_form';
+  $form['entries']['#tree'] = TRUE;
+  $options = $default_values = array();
+  $result = _do_lookup($root, $dxn, 'edit');
+  $lang = ($dxn==1)?t('English'):t('Swahili');
+  $otherlang = ($dxn==1)?t('Swahili'):t('English');
+  $i = 1;
+  
+  while($r = db_fetch_object($result)){
+    $p_s = $pos[$r->PartOfSpeech];
+    $word = ($dxn==1)?$r->EnglishWord:$r->SwahiliWord;
+    $trans = ($dxn==1)?$r->SwahiliWord:$r->EnglishWord;
+    $form['entries'][$r->Id]['SortBy'] = array(
+        '#value'=> sprintf("%s { %s: %s } %s",
+                           $word, $otherlang, $trans, $p_s));
+    $default_values[$r->Id] = $r;
+    $options[$i] = $i;
+    //Include other values that may not be automatically accounted for
+    $options[$r->GroupNum] = $r->GroupNum;
+    $options[$r->InGroupPos] = $r->InGroupPos;
+    $i = $i + 1;
+  }
+  //print_r($default_values);
+  foreach(element_children($form['entries']) as $id){
+    $form['entries'][$id]['GroupNum'] = array(
+        '#type'=>'select',
+        '#title'=>t('Group'),
+        '#default_value'=> $default_values[$id]->GroupNum,
+        '#options'=>$options);
+    $form['entries'][$id]['InGroupPos'] = array(
+        '#type'=>'select',
+        '#title'=>t('Position in Group'),
+        '#default_value'=> $default_values[$id]->InGroupPos,
+        '#options'=>$options);
+  }
+  /*drupal_set_message(print_r($options,1));
+  $form['order'] = array(
+    '#type' => 'select',
+    '#multiple' => TRUE,
+    '#options' => $options,
+                        );
+  */
+  $form['Word'] = array('#type'=>'hidden', '#value'=>$root);
+  $form['EngP'] = array('#type'=>'hidden', '#value'=>$dxn);
+  /*$form['prev_order'] = array('#type'=>'hidden', '#value'=>'');
+  
+  $form['totop'] = array(
+    '#type'=>'button',
+    '#value'=>t('Move To Top'),
+    '#attributes' =>array('onClick'=>t("moveToTopOfList(document.getElementById('edit-order')); listpos(document.getElementById('edit-order'), document.getElementById('edit-prev-order')); return false;")),
+  );
+  $form['up'] = array(
+    '#type'=>'button',
+    '#value'=>t('Move Up'),
+    '#attributes' =>array('onClick'=>t("moveUpList(document.getElementById('edit-order')); listpos(document.getElementById('edit-order'), document.getElementById('edit-prev-order'));return false;")),
+  );
+  $form['break'] = array(
+    '#type'=>'button',
+    '#value'=>t('Add Break'),
+    '#attributes' =>array('onClick'=>t("addBreak(document.getElementById('edit-order')); listpos(document.getElementById('edit-order'), document.getElementById('edit-prev-order'));return false;")),
+  );
+  $form['down'] = array(
+    '#type'=>'button',
+    '#value'=>t('Move Down'),
+    '#attributes' =>array('onClick'=>t("moveDownList(document.getElementById('edit-order')); listpos(document.getElementById('edit-order'), document.getElementById('edit-prev-order'));return false;")),
+  );
+  $form['tobottom'] = array(
+    '#type'=>'button',
+    '#value'=>t('Move To Bottom'),
+    '#attributes' =>array('onClick'=>t("moveToBottomOfList(document.getElementById('edit-order')); listpos(document.getElementById('edit-order'), document.getElementById('edit-prev-order'));return false;")),
+  );*/
+  $form['goback'] = array(
+      '#type'=>'item',
+      '#value'=>t('Cancel and go back to !search',
+                  array('!search'=>
+                        l($root, 'lookup',
+                         array('query'=>"Word=$root&EngP=$EngP")))));
+  $form['save'] = array(
+    '#type'=>'submit',
+    '#value'=>t('Submit Ordering'),
+    //'#attributes' =>array('onClick'=>t("removeBreaks('edit-prev-order'); return false;")),
+  );
+  //'#attributes' =>array('onChange'=>t("listpos(document.getElementById('edit-order'), document.getElementById('edit-prev-order')); return true;")),
+  //$form['#token'] = FALSE;
+  return $form;
+}
+
+function _swen_order_submit($form, &$values){
+  $vals = $values['values'];
+  foreach($vals['entries'] as $Id=>$info){
+    $info['WordId'] = $Id;
+    $info['SortBy'] = $vals['Word'];
+    $info['EngP'] = $vals['EngP'];
+    $exists = db_result(db_query("SELECT COUNT(*) FROM {word_grouping}
+                                 WHERE WordId=%d AND EngP=%d",
+                                 $info['WordId'], $info['EngP']));
+    
+    if($exists){
+      db_query(_swen_build_query('update', 'word_grouping', $info));
+    }else{
+      db_query(_swen_build_query('insert', 'word_grouping', $info));      
+    }
+  }
+  _swen_update_cache(array_pop($vals));
+  //drupal_set_message(print_r($vals, 1));
+}
+
+function _swen_add_cluster_js($cluster){
+//  print $cluster;
+//  print_r($_GET,1);
+}
+
+function _swen_translate_dbcolnames($colname){
+  global $SWEN_FIELDS;
+}
+
+function _swen_update_cache($entry){  
+  //drupal_set_message('swen_result:'.$entry['SwahiliSortBy'].'#0');
+  cache_clear_all('swen_result:'.$entry['SwahiliSortBy'].'#0', 'cache');
+  cache_clear_all('swen_parse:'.$entry['SwahiliSortBy'].'#0', 'cache');
+  cache_clear_all('swen_result:'.$entry['EnglishSortBy'].'#1', 'cache');
+}
+
+function swen_cron(){
+  $lastrun = variable_get('swen_cron_last', 0);
+  if((time() - $lastrun) > 86400){
+    variable_set('swen_cron_last', time());
+    include_once(drupal_get_path('module', 'dblog').'/dblog.admin.inc');
+    $header = array(
+      array('data' => t('Type')),
+      '',
+      array('data' => t('Search term'), 'field' => 'message'),
+      array('data' => t('Tries'), 'field' => 'count', 'sort' => 'desc'),
+      ''
+    );
+    $rows = array();
+    foreach(array(0=>t('Swahili-English'), 1=>t('English-Swahili')) as $dxn=>$name){
+      $type = $dxn==0?'sw|en':'en|sw';
+      
+      $result = db_query("SELECT COUNT(wid) AS count, message, variables FROM {watchdog}
+                         WHERE type = '%s' AND `timestamp`>%d
+                         GROUP BY message, variables ". tablesort_sql($header),
+                         $type, $lastrun);
+    
+      
+      while ($dblog = db_fetch_object($result)) {
+        $term = truncate_utf8(_dblog_format_message($dblog), 56, TRUE, TRUE);
+        $rows[] = array($name, '', $term, $dblog->count,
+                        l(t('Create entry'), "node/add/kentry-$db/$term",
+                                 array('absolute'=>1)));
+      }
+    }
+    if(count($rows)){  
+      $output  = theme('table', $header, $rows);
+      $output .= theme('pager', NULL, 30, 0);
+      $params = array(
+              'subject'=>t('!day failed searches', array('!day'=>date('r'))),
+              'message' => $output,                
+              'headers'=>array(
+                  'From' => variable_get('site_name', 'A kasahorow website').
+                      '<'.variable_get('site_mail', 'content@kasahorow.com').'>',
+                  'Content-Type' => 'text/html; charset=UTF-8; format=flowed',
+                  
+                  )
+                          );
+      drupal_mail('kdictionary', 'alert', variable_get('kdictionary_mail', 'kasahorow@suuch.com'), language_default(), $params); 
+      watchdog('swen', 'Alert sent:'.format_date(variable_get('swen_cron_last', time())));
+    }
+  }
+  
+}
+
+function _swen_user_history(){
+  global $user;
+  $content = '';
+  $history = unserialize($_COOKIE['kamusihistory']);
+  $recent = array();
+  
+  if(is_array($history)){
+    foreach($history as $search=>$time){
+      list($dxn, $term) = split('#', $search);
+      $path = ($dxn==1)?'en':'sw';
+      $recent[$dxn][$term] = '<li>'.l($term, "lookup/$path",
+                               array('query'=>'Word='.$term.'&utm_source=self&utm_medium=link&utm_campaign=history')).'</li>';
+    }
+    if(is_array($recent[1])){
+      $content.= '<strong>'.t('English to Swahili').'</strong>';
+      $content.= '<ol>';
+      $content.= join('', $recent[1]);
+      $content.= '</ol>';
+    }
+    if(is_array($recent[0])){
+      //$content.= '<br/><br/>';
+      $content.= '<strong>'.t('Swahili to English').'</strong>';
+      $content.= '<ol>';
+      $content.= join('', $recent[0]);
+      $content.= '</ol>';
+    }
+  }
+  return $content;
+}
+
+function _swen_delete($state, $Id){
+  $form = array();
+  $form['Id'] = array(
+    '#type'=>'hidden',
+    '#value'=>$Id
+    );
+  $form['del'] = array(
+    '#type' => 'fieldset',
+    '#description' => _swen_image('view', $Id),
+  );
+  $form['del']['confirm'] = array(
+    '#type'=>'checkbox',
+    '#title'=>t('Confirm deletion or !cancel',
+                array('!cancel'=>l('click here to cancel', $_SERVER['HTTP_REFERER'])))
+  );
+  
+  $form['del']['submit'] = array(
+    '#type'=>'submit',
+    '#value'=>t('Delete forever')
+  );
+  return $form;
+}
+
+function _swen_delete_submit($state, &$values){
+  $form = array();
+  if($values['values']['confirm'] && $values['values']['Id']){
+    $entry = db_fetch_array(db_query("SELECT * FROM {dict}
+                                     WHERE Id=%d", $values['values']['Id']));
+    $status = db_query("DELETE FROM {dict} WHERE Id=%d LIMIT 1",
+              $values['values']['Id']);
+    $status?drupal_set_message(t('Deletion succeeded')):
+          drupal_set_message(t('Deletion failed'));
+    _swen_update_cache($entry);    
+  }else{
+    drupal_set_message(t('Deletion cancelled'));
+  }
+  
+}
+
+/**
+ * Hook into PALDO
+ * TODO(how to integrate)
+ */
+function swen_paldo($nid){
+  if(user_access('access paldo')){
+    return;
+    $output = '';
+    //Grab this node from PALDO and format it for display
+    $auth = array('key' => 'kamusi', 'lang' => 'en');
+    $result = xmlrpc(variable_get('paldo_server',
+                                  'http://data.kamusiproject.org').
+                     '/xmlrpc.php', 'get.node', $auth, (int)$nid);
+    drupal_set_message(print_r($result,1), 1);
+    if($result === FALSE) {
+      //Do nothing
+    }else{//Cache and display
+      $output.= ' '.$result['defn'];
+    }
+    return $output;
+  }
+}
+
+function _swen_suggest($start) {
+  $options = array();
+  $sw_q = db_query("SELECT * FROM {dict}
+                    WHERE SwahiliWord LIKE '%s%%'
+                    GROUP BY SwahiliWord
+                    LIMIT 5", $start);
+  while($r = db_fetch_object($sw_q)) {
+    $options[$r->SwahiliWord] =
+        l($r->SwahiliWord.'  <small>'.t('Swahili').'</small>',
+          'lookup/sw', array('query' => "Word=".$r->SwahiliSortBy.
+                                        "&utm_source=self&utm_medium=link&".
+                                        "utm_campaign=suggestsw",
+                             'html' => 1));
+  }
+  $en_q = db_query("SELECT * FROM {dict}
+                    WHERE EnglishWord LIKE '%s%%'
+                    GROUP BY EnglishWord
+                    LIMIT 5", $start);
+  while($r = db_fetch_object($en_q)) {
+    $options[$r->EnglishWord] =
+        l($r->EnglishWord.'  <small>'.t('English').'</small>',
+          'lookup/en', array('query' => "Word=".$r->EnglishSortBy.
+                                        "&utm_source=self&utm_medium=link&".
+                                        "utm_campaign=suggesten",
+                             'html' => 1));
+  }
+  drupal_json($options);
+}
+
+function _swen_lookup_paldo($word, $lang) {
+  drupal_set_message(t('This is an experimental feature. Showing you results from the Web.'), 'warning');
+  $from = ($lang == 1)? 'en' : 'sw';
+  $to = ($lang == 1)? 'sw' : 'en';
+  $output.= '<div id="kclientresults"></div>';
+  $output.='<script type="text/javascript">';
+  $output.=<<<JAVASCRIPT_CALLBACK
+function kasahorow_callback(feed) {
+  var output = '';
+  var kitems = feed.results;
+  for(var i = 0; i < kitems.length; i++) {
+    output+= '<div class="get-links-result">';
+    output+= '<b>'+kitems[i].node['title']+'</b>';
+    output+= '<p><img width=50px height=50px src="'+
+             kitems[i].node['thumbnail']+'" align=left />'+
+             kitems[i].node['defn']+kitems[i].snippet+'</p>';
+    output+= '<p align="right"><a href="'+kclient_dom+'/node/'+
+             kitems[i].node['nid']+'&utm_campaign=wijiti">Details</a></p>';
+    output+= "</div>";
+  }
+  document.getElementById("kclientresults").innerHTML = output;
+}
+JAVASCRIPT_CALLBACK;
+  $vars = _swen_paldoclient_vars($word, $from, $to);
+  foreach($vars as $var => $value) {
+    $output.= "$var = '$value';";//join('; ', $vars);
+  }
+  $output.='</script>';
+  $output.='<script type="text/javascript" src="http://s.words.fienipa.com/get_links.js"></script>';
+  return $output;
+  global $pos, $derived_langs, $Terminology;
+  $field_mappings = variable_get('swen_paldo_fields', array());
+  $searchterm = $word;
+  $result = xmlrpc(variable_get('paldo_server',
+             'dictionary.kasahorow.com')."/xmlrpc.php",
+                'get.links',
+                 array(
+                     'key'=>trim(
+                   variable_get('kclient_db_key',
+                     'swen')),
+                     'limit'=> variable_get(
+                     'kclient_limit', 10),
+                     'page'=>$_GET['page']
+                     ), $searchterm,
+                 $from, $to);
+  if ($result === FALSE) {
+    watchdog('kclient', 'Error %code: %message',
+    array('%code' => xmlrpc_errno(),
+      '%message' => xmlrpc_error_msg()),
+    WATCHDOG_ERROR);
+  }else{
+    $results = $result['results'];
+    $pager_total_items = $result['paging']['items'];
+    $pager_total = $result['paging']['total'];
+    $pager_page_array = $result['paging']['array'];
+  }
+  $rows = array();
+  if (count($result['results'])) {
+    foreach ($result['results'] as $id => $found) {//_dprint($found);
+      $row = new StdClass(); //Convert the PALDO result into a {dict} row
+      $row->Id = $row->nid = $result['results'][$id]['node']['nid'];
+      if (is_array($result['results'][$id]['node']['taxonomy'])) {
+        foreach ($result['results'][$id]['node']['taxonomy'] as $tid => $term) {
+          switch ($term['vid']) {
+            case $field_mappings['POS']:
+              $row->PartOfSpeech = array_search($term['name'], $pos);                     
+             break;
+            case $field_mappings['DL']:
+              $row->DerivedLang = array_search($term['name'], $derived_langs);
+              break;
+            case $field_mappings['TERM']:
+              $row->Terminology = array_search($term['name'], $Terminology);
+              break;
+          }
+        }
+      }
+      foreach ($result['results'][$id]['node']['chn'] as $chid => $child) {
+        $row->{$child['name']} = $child['value'];
+      }
+      if($from  == 'sw') {
+        $row->SwahiliWord = $result['results'][$id]['node']['title'];
+        $row->SwahiliSortBy = $result['results'][$id]['node']['word'];
+        $row->SwahiliExample = $result['results'][$id]['node']['example']['default'];
+        $row->SwahiliDefinition = $result['results'][$id]['node']['body'];
+        foreach ($result['results'][$id]['node']['relations'] as $type => $rel) {
+          foreach ($rel as $vid => $val) {
+            if($val['iso'] == 'en') {
+              //We have to clone $row because objects are implicitly called by reference
+              //so any operations on $row will overwrite any previous operations
+              $newrow = drupal_clone($row); 
+              $newrow->EnglishWord = $rel[$vid]['title'];
+              $newrow->EnglishSortBy = $rel[$vid]['root'];
+              $newrow->GroupNum = $rel[$vid]['cluster'];
+              $newrow->InGroupPos = $rel[$vid]['rank'];
+              $rows[] = $newrow;
+            }
+          }
+        }
+      }else{//$from == 'en'
+        $row->EnglishWord = $result['results'][$id]['node']['title'];
+        $row->EnglishSortBy = $result['results'][$id]['node']['word'];
+        $row->EnglishExample = $result['results'][$id]['node']['example']['default'];
+        $row->EnglishDef = $result['results'][$id]['node']['body'];
+
+        foreach ($result['results'][$id]['node']['relations'] as $type => $rel) {
+          foreach ($rel as $vid => $val) {
+            if($val['iso'] == 'sw') {
+              $newrow = drupal_clone($row); 
+              $newrow->SwahiliWord = $val['title'];
+              $newrow->SwahiliSortBy = $val['root'];
+              $newrow->GroupNum = $rel[$vid]['cluster'];
+              $newrow->InGroupPos = $rel[$vid]['rank'];
+              $rows[] = $newrow;
+            }
+          }
+        }
+      }
+    }
+  }
+  return $rows;
+}
+
+function _swen_paldoclient_vars($word, $from, $to) {
+  $vars = array();
+  $vars['kclient_query'] = "$word";
+  $vars['kclient_db'] = "$from";
+  $vars['kclient_link'] = "$to";
+  $vars['kclient_query'] = "$word";
+  $vars['kclient_dom'] = "http://translate.fienipa.com";
+  $vars['kclient_format'] = "js";
+  $vars['kclient_key'] = "kamusi";
+  return $vars;
+}
