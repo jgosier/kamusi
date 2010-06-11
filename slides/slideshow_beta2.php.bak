@@ -1,0 +1,176 @@
+<?php
+    require_once('DirIterator.php');
+    include('/home/kamusi/swahili/Connections/kam.php');
+	
+    class Slideshow
+    {
+        private $host;
+		
+	private $path;
+		
+	private $photo;
+		
+	private $directory;
+		
+	private $source_dir;
+		
+	private $url;
+		
+	private $default_img;
+		
+	function __construct() {
+	    mysql_select_db( "kamusi" );
+	    $this->host = "http://kamusi.org/view_image/?id=";
+	}
+		
+        function resize_image( $filename ) {
+            $imageinfo = @getimagesize( $filename );
+
+            list( $org_width, $org_height ) = $imageinfo;
+								
+            //check if original image is greater or equal to 400
+            $given_width = $org_width >= 400 ? 400 : $org_width;
+			
+            if( is_int( $org_width ) ) { 	
+	        $aspect_ratio = ( $org_height / $org_width );
+
+	        $new_height = ( $aspect_ratio * $given_width );
+            }
+        
+            $dimension = array( 'width' => $given_width, 'height' => $new_height );
+				
+            return $dimension;
+	}
+		
+        function set_up_slideshow( $photo, $path ) {
+            $dimension = $this->resize_image( $photo );
+	    $slideshow = '
+	        <script type="text/javascript" src="../newskin/mootools.js"></script>
+	        <script type="text/javascript" src="../newskin/slideshow.js"></script>
+		    <div style="border:3px solid #A50000; background-color:#F6F3EC;width:'.$dimension['width'].'px; height:'.
+    $dimension['height'].'px; color:#422C1A;font-family:Arial;
+        margin:0 auto;" >	
+
+		        <div id="my_slideshow" class="slideshow">
+		            <a href="'.$this->get_url().'" target="_blank">
+			        <img border="0" src="http://perl.kamusiproject.org/'.$this->get_photo().'" 
+			            alt="community submitted photo" width="'.$dimension['width'].'" height="'.$dimension['height'].'" /> </a>
+		        </div>
+    
+		        <script type="text/javascript">
+		            myShow = new Slideshow(\'my_slideshow\', {hu: \''.$this->get_path().'/\',
+		                    '.$this->setup_images( $path ).',width:'.$dimension['width'].', height: '.$dimension['height'].'});
+		        </script>
+		    </div>';
+
+	    return $slideshow;
+	}
+		
+	function set_directory( $path ) {
+	    $sub_dir = array();
+	    //$files = array();
+
+	    if( file_exists( $path ) ) {
+                if( $handle = opendir( $path  ) ) {
+	                //iterate through the directory
+	            while( false !== ( $file = readdir( $handle ) ) ) {
+	                if( !eregi('^[a-zA-Z0-9._-]+\.[a-zA-Z0-9._-]$|[.]',
+							$file ) ) {
+	                    $sub_dir[] =  $file;
+
+	                }
+	            }
+
+	        } else {
+	            echo "No such directory $directory";
+	        }
+            }
+
+	    // start picking random name from the directory 
+	    $size = sizeof( $sub_dir );
+	    $id = ( rand() % $size );
+	
+	    //generate random number
+	    $this->directory = $sub_dir[ $id ];
+	}
+		
+	function get_directory() {
+	    return $this->directory;
+	}
+		
+	function set_path( $path ) {
+	    $this->path = $path;
+	}
+		
+	function get_path() {
+	    return $this->path;
+	}
+		
+	function set_photo( $photo ) {
+	    $this->photo = $photo;
+	}
+		
+	function get_photo() {
+	    return $this->photo;
+	}
+		
+	function get_filename( $file) {
+	    $filename = substr( $file, strrpos( $file, '/' )+1,strlen( $file ) - 
+	    strrpos( $file, '/' ) );
+	    return $filename;
+	}
+		
+	function set_url( $id ) {
+	    // google analytics parameters
+            $ga = "&utm_source=feature&utm_medium=homepage&utm_campaign=slideshow";	
+	    $q = "SELECT SwahiliWord, EnglishWord FROM dict WHERE id=$id";
+
+	    $result = mysql_query( $q ) or die("Couldn't fetch url detail ".mysql_error() );
+
+	    while( $row = mysql_fetch_array( $result ) ) {
+	        $view_image = "&EnglishWord=".$row['EnglishWord']."&SwahiliWord=".$row['SwahiliWord']."EngP=1";
+	    }
+			
+	    $this->url =  url_encode( $this->host.$id.$view_image.$ga);
+	}
+		
+	function get_url() {
+	    return $this->url;
+	}
+		
+	function set_default_img( $id ) {
+	    $q = " SELECT FileName FROM images WHERE Id = $id";
+
+	    $result = mysql_query( $q ) or 
+                    die("couldn't fetch detail ".mysql_error() );
+
+	    while( $row = mysql_fetch_array( $result ) ) {
+	        $img_filename = $row['FileName'];
+	    }
+
+	    $this->default_img = $img_filename;
+	}
+		
+	function get_default_img() {
+	    return $this->default_img;
+	}
+		
+	function setup_images( $path ) {
+
+            $images = "images:[";
+	    foreach( new DirIterator( $path ) as $file ) {
+	        if( eregi('^[a-zA-Z0-9._-]+\.jpg|JPEG|PNG|png',$file) ) {
+					
+	            $filename[] = "'".$this->get_filename( $file )."'";
+	        } 
+
+	    }
+	    $csimg = @implode( ",", $filename );
+	    $images .= $csimg;
+
+	    $images .= "]";
+	    return $images;
+	}
+    }
+
+?>
