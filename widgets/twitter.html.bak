@@ -1,0 +1,32 @@
+<html>
+		<head>
+				<title> News Flash </title>
+				<style type="text/css">
+						a:link, a:visited, a:active { 
+								color: #A50000; 
+								text-decoration: none; 
+						}
+
+						img {
+								border : 0;
+						}
+
+						body {
+								font: 11px geneva, arial, verdana, sans-serif;
+								background : url( _bg_kikoi.jpg );
+						}
+						
+				</style>
+		</head>
+		<body>
+<div style="border:3px solid #A50000; width:176px;">
+<div style="width:176px;text-align:center">
+		<embed src="http://twitter.com/flash/twitter_badge.swf"  flashvars="color1=6697728&type=user&id=12318122"  
+		quality="high" width="176" height="176" name="twitter_badge" align="middle" allowScriptAccess="always" 
+		wmode="transparent" type="application/x-shockwave-flash" pluginspage="http://www.macromedia.com/go/getflashplayer" />
+</div></div>	
+		<br>
+		<a style="font-size: 10px; color: #422C1A; text-decoration: none; font-weight: bold;" 
+		sftp://root@kamusiproject.org//var/www/themes/kamusi/href="http://twitter.com/kamusiproject">follow kamusiproject at twitter.com</a>				
+		</body>
+</html>

@@ -1,0 +1,25 @@
+<p>
+<div id="twtr-profile-widget"></div>
+</p>
+<script src="http://widgets.twimg.com/j/1/widget.js"></script>
+<link href="http://widgets.twimg.com/j/1/widget.css" type="text/css" rel="stylesheet">
+<script>
+new TWTR.Widget({
+  profile: true,
+  id: 'twtr-profile-widget',
+  loop: true,
+  width: 210,
+  height: 300,
+  theme: {
+    shell: {
+      background: '#a50000',
+      color: '#f6f3ec'
+    },
+    tweets: {
+      background: '#f6f3ec',
+      color: '#422c1a',
+      links: '#a50000'
+    }
+  }
+}).render().setProfile('kamusiproject').start();
+</script>
