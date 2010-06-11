@@ -1,0 +1,22 @@
+.thetable {
+	height: 100%;
+} /* required  so floated tablecells take the height*/
+
+.tablecell	{
+	float: left;
+} /* to overcome display: table-cell; */
+
+.one, .two, .three	{
+	height: 100%;
+} /* to overcome child selector */
+
+.two {
+	width: 100%; 
+	padding-right: 200px; 
+	padding-left: 180px;
+	margin-left: -180px; 
+}
+
+.three	{
+	margin-left: -200px;
+}

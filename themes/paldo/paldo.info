@@ -1,0 +1,15 @@
+name = Kamusi Project
+description = kamusi.org
+version = VERSION
+core = 6.x
+engine = phptemplate
+stylesheets[all][] = style.css
+regions[left] = Left sidebar
+regions[right] = Right sidebar
+regions[content] = Content
+regions[content_top] = Content Top
+regions[header] = Header
+regions[footer] = Footer
+regions[lefttop] = Left Top
+regions[leftbottom] = Left Bottom
+regions[advert] = Dictionary Search Result Advertisement
